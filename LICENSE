@@ -1,0 +1,206 @@
+Business Source License 1.1
+
+PARAMETERS
+
+Licensor: Mengyu Yang
+Licensed Work: PaperPrism
+Copyright: (c) 2026 Mengyu Yang
+Additional Use Grant: You may make use of the Licensed Work for
+Non-Commercial and Academic Purposes, as
+defined below.
+Change Date: Four years from the date of the first publicly
+available distribution of each version of the
+Licensed Work.
+Change License: Apache License, Version 2.0
+
+DEFINITIONS
+
+"Non-Production Use" means use of the Licensed Work for development,
+testing, staging, prototyping, demonstration, or other activities that
+do not serve end users or systems in a live production environment. For
+the avoidance of doubt, Non-Production Use does not include deployment
+to any environment that handles live customer traffic, processes real
+customer data, or provides functionality to end users.
+
+"Non-Commercial Purpose" means personal use, evaluation, testing,
+demonstration, or research where the primary intent is not to generate
+revenue, commercial advantage, or monetary compensation. Use by a
+for-profit entity for internal tooling, prototyping, or evaluation that
+does not directly serve paying customers or directly generate revenue
+qualifies as Non-Commercial Purpose. Use by a not-for-profit
+organization in furtherance of its charitable mission also qualifies as
+Non-Commercial Purpose.
+
+"Academic Purpose" means use by students, faculty, staff, or researchers
+at a degree-granting educational institution (including university-
+affiliated hospitals, laboratories, and research institutes), or by
+independent researchers affiliated with a recognized non-profit research
+organization, for the purposes of teaching, scholarly research, or
+publication, provided that any resulting products or services are not
+offered commercially.
+
+TERMS
+
+The Licensor hereby grants you the right to copy, modify, create
+derivative works, redistribute, and make Non-Production Use (as defined
+above) of the Licensed Work. The Licensor may make an Additional Use
+Grant, above, permitting limited production use.
+
+PATENT GRANT
+
+Subject to the terms and conditions of this License, the Licensor hereby
+grants you a perpetual, worldwide, non-exclusive, royalty-free patent
+license to make, have made, use, import, and otherwise transfer the
+Licensed Work, where such license applies only to those patent claims
+licensable by the Licensor that are necessarily infringed by the Licensed
+Work. This patent grant is subject to the same use restrictions as the
+copyright grant above, including the Additional Use Grant. This patent
+grant terminates automatically if you initiate patent litigation
+(including a cross-claim or counterclaim) against the Licensor or any
+contributor alleging that the Licensed Work constitutes patent
+infringement.
+
+This patent grant does not extend to any patent claims that are infringed
+by modifications made by you or by combinations of the Licensed Work with
+other software or hardware. The Licensor makes no representation or
+warranty that the Licensed Work does not infringe the patent rights of
+any third party.
+
+CHANGE DATE AND LICENSE TRANSITION
+
+Effective on the Change Date (i.e., the fourth anniversary of the first
+publicly available distribution of the applicable version of the Licensed
+Work), the Licensor hereby grants you rights under the terms of the
+Change License, and the rights granted in the paragraphs above terminate.
+Upon transition to the Change License, the patent grant above shall be
+superseded by the patent grant in the Change License.
+
+COMMERCIAL LICENSING
+
+If your use of the Licensed Work does not comply with the requirements
+currently in effect as described in this License, you must purchase a
+commercial license from the Licensor, its affiliated entities, or
+authorized resellers, or you must refrain from using the Licensed Work.
+
+Commercial license inquiries should be directed to:
+
+    Mengyu Yang
+    yang.mengy@northeastern.edu
+    https://merlinyang.com/
+
+VERSIONING
+
+All copies of the original and modified Licensed Work, and derivative
+works of the Licensed Work, are subject to this License. This License
+applies separately for each version of the Licensed Work and the Change
+Date may vary for each version of the Licensed Work released by Licensor.
+
+DISPLAY AND DISTRIBUTION
+
+You must conspicuously display this License on each original or modified
+copy of the Licensed Work. If you receive the Licensed Work in original
+or modified form from a third party, the terms and conditions set forth
+in this License apply to your use of that work.
+
+TERMINATION AND CURE
+
+Any use of the Licensed Work in violation of this License will constitute
+a breach. Upon becoming aware of such breach, the Licensor or any
+recipient of the Licensed Work may notify you in writing. You shall have
+thirty (30) days from the date of such notice to cure the violation. If
+the violation is cured within the 30-day period, your rights under this
+License shall be reinstated retroactively. If the violation is not cured
+within the 30-day period, your rights under this License shall
+automatically terminate for the current and all other versions of the
+Licensed Work.
+
+Notwithstanding the above, if this is your first breach of this License
+and you cure the violation within the 30-day period, your rights are
+permanently reinstated. For subsequent breaches, the Licensor reserves
+the right to terminate your rights immediately upon notice if you fail to
+cure within the 30-day period.
+
+CONTRIBUTIONS
+
+By intentionally submitting any contribution for inclusion in the
+Licensed Work -- including but not limited to source code, documentation,
+bug fixes, and configuration changes submitted via pull request, patch,
+email, or any other mechanism -- you agree to the following terms:
+
+(a) License Grant. Your contribution is licensed under the same terms and
+conditions as this License, without any additional terms or
+conditions, unless you and the Licensor have executed a separate
+written agreement governing such contributions.
+
+(b) Commercial Licensing Rights. You expressly acknowledge and agree that
+the Licensor retains the unrestricted right to offer commercial
+licenses for the Licensed Work, including any portion that
+incorporates your contribution, to third parties under terms that
+differ from this License. You will not receive royalties,
+compensation, or additional consideration for any such commercial
+licensing.
+
+(c) Representations. You represent that you are the original author of
+your contribution (or have sufficient rights to submit it), that your
+contribution does not knowingly infringe any third party's
+intellectual property rights, and that you have the legal authority to
+enter into this agreement.
+
+(d) Irrevocability. Once submitted, the rights granted under this section
+are irrevocable. You understand that the Licensor and downstream
+recipients may rely on these rights, and that your contribution may
+be incorporated into versions of the Licensed Work distributed under
+this License, the Change License, or a commercial license.
+
+TRADEMARKS
+
+This License does not grant you any right in any trademark or logo of
+Licensor or its affiliates. Nothing in this License shall be construed as
+permission to use the trade names, trademarks, service marks, or product
+names of the Licensor, except as required for reasonable and customary
+use in describing the origin of the Licensed Work.
+
+GOVERNING LAW
+
+This License shall be governed by and construed in accordance with the
+laws of California, without regard to its conflict of laws principles.
+Any dispute arising under this License shall be subject to the exclusive
+jurisdiction of the courts located in California.
+
+SEVERABILITY
+
+If any provision of this License is held to be unenforceable or invalid
+by a court of competent jurisdiction, that provision shall be modified to
+the minimum extent necessary to make it enforceable, or if modification
+is not possible, severed from this License. All remaining provisions
+shall continue in full force and effect.
+
+ENTIRE AGREEMENT
+
+This License constitutes the entire agreement between you and the
+Licensor with respect to the Licensed Work and supersedes all prior or
+contemporaneous understandings, communications, or agreements, written or
+oral, regarding its subject matter. No amendment to or modification of
+this License shall be binding unless in writing and signed by the
+Licensor.
+
+DISCLAIMER OF WARRANTIES
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED
+ON AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND
+CONDITIONS, EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT,
+AND TITLE. WITHOUT LIMITING THE FOREGOING, THE LICENSOR MAKES NO
+WARRANTY THAT THE LICENSED WORK DOES NOT INFRINGE THE INTELLECTUAL
+PROPERTY RIGHTS, INCLUDING PATENT RIGHTS, OF ANY THIRD PARTY.
+
+LIMITATION OF LIABILITY
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+LICENSOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THE
+LICENSED WORK, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

@@ -1,0 +1,33 @@
+# Environment & secrets
+.env
+.env.production
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# Data (generated at runtime)
+backend/data/
+backend/uploads/
+backend/processed_data/
+backend/logs/
+demo_papers/
+qdrant_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

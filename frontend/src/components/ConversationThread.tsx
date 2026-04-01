@@ -1,0 +1,336 @@
+import { useEffect, useRef, useState } from 'react';
+import { MessageSquare, Sparkles, Check, Loader2, SkipForward, AlertTriangle, Globe, BookOpen, Upload, Settings } from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { ResponseCard } from './ResponseCard';
+import type { PipelineStepInfo } from '../types';
+
+// Pipeline step status icon
+function StepIcon({ status }: { status: PipelineStepInfo['status'] }) {
+  switch (status) {
+    case 'completed':
+      return <Check className="w-3.5 h-3.5 text-green-500" />;
+    case 'active':
+      return <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />;
+    case 'skipped':
+      return <SkipForward className="w-3.5 h-3.5 text-gray-400" />;
+    case 'failed':
+      return <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />;
+    default:
+      return <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 dark:border-gray-600" />;
+  }
+}
+
+// Pipeline progress display component
+function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInfo[]; webSearchProgress?: string | null }) {
+  const activeStep = steps.find((s) => s.status === 'active');
+
+  return (
+    <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
+      {/* Web search progress indicator */}
+      {webSearchProgress && (
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/20 -mx-4 -mt-4 px-4 pt-4 rounded-t-xl">
+          <Globe className="w-5 h-5 text-blue-500 animate-pulse" />
+          <div className="flex-1">
+            <div className="font-medium text-blue-700 dark:text-blue-300">
+              Searching the web...
+            </div>
+            <div className="text-sm text-blue-600 dark:text-blue-400 truncate">
+              {webSearchProgress}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Current step indicator */}
+      {activeStep && !webSearchProgress && (
+        <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
+          <div>
+            <div className="font-medium text-gray-900 dark:text-gray-100">
+              {activeStep.label}
+            </div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              {activeStep.description}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Steps list */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+        {steps.map((step) => (
+          <div
+            key={step.name}
+            className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
+              step.status === 'active'
+                ? 'bg-blue-50 dark:bg-blue-900/20'
+                : step.status === 'completed'
+                ? 'bg-green-50 dark:bg-green-900/10'
+                : step.status === 'failed'
+                ? 'bg-amber-50 dark:bg-amber-900/20'
+                : step.status === 'skipped'
+                ? 'bg-gray-50 dark:bg-gray-800/50'
+                : ''
+            }`}
+          >
+            <StepIcon status={step.status} />
+            <span
+              className={`text-xs mt-1 text-center ${
+                step.status === 'active'
+                  ? 'text-blue-600 dark:text-blue-400 font-medium'
+                  : step.status === 'completed'
+                  ? 'text-green-600 dark:text-green-400'
+                  : step.status === 'failed'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : step.status === 'skipped'
+                  ? 'text-gray-500 dark:text-gray-400'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {step.label}
+            </span>
+            {step.status === 'skipped' && (
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                skipped
+              </span>
+            )}
+            {step.status === 'failed' && (
+              <span className="text-xs text-amber-500 dark:text-amber-400">
+                failed
+              </span>
+            )}
+            {/* Show step data if available */}
+            {step.data && step.status === 'completed' && (
+              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                {typeof step.data.count === 'number' && `${step.data.count}`}
+                {typeof step.data.type === 'string' && `${step.data.type}`}
+                {Array.isArray(step.data.found) && step.data.found.length > 0 && `${step.data.found.length}`}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface ConversationThreadProps {
+  onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
+}
+
+export function ConversationThread({ onScroll }: ConversationThreadProps) {
+  const { state, setActivePage, openUploadPanel } = useApp();
+  const { conversations, activeConversationId, isLoading, pipelineProgress, streamingState, webSearchProgress } = state;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [isAnchorVisible, setIsAnchorVisible] = useState(true);
+
+  const activeConversation = conversations.find(
+    (c) => c.id === activeConversationId
+  );
+
+  // Use Intersection Observer to track if anchor is visible
+  useEffect(() => {
+    const anchor = anchorRef.current;
+    const container = scrollRef.current;
+    if (!anchor || !container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Anchor is visible = user is at/near bottom
+        setIsAnchorVisible(entries[0].isIntersecting);
+      },
+      {
+        root: container,
+        threshold: 0,
+        rootMargin: '0px 0px 150px 0px', // 150px buffer at bottom
+      }
+    );
+
+    observer.observe(anchor);
+    return () => observer.disconnect();
+  }, []);
+
+  // Track manual scroll to detect user intent
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    let lastScrollTop = container.scrollTop;
+
+    const handleScroll = () => {
+      const currentScrollTop = container.scrollTop;
+      const scrollingUp = currentScrollTop < lastScrollTop;
+
+      // User scrolled up = they want to stay where they are
+      if (scrollingUp) {
+        setIsAtBottom(false);
+      }
+      // User scrolled down to where anchor is visible = re-enable auto-scroll
+      else if (isAnchorVisible) {
+        setIsAtBottom(true);
+      }
+
+      lastScrollTop = currentScrollTop;
+
+      // Report scroll position to parent
+      onScroll?.(container.scrollTop, container.scrollHeight, container.clientHeight);
+    };
+
+    // Initial call to set scroll state
+    onScroll?.(container.scrollTop, container.scrollHeight, container.clientHeight);
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [isAnchorVisible, onScroll]);
+
+  // Reset state when conversation changes
+  useEffect(() => {
+    setIsAtBottom(true);
+    setIsAnchorVisible(true);
+  }, [activeConversationId]);
+
+  // Auto-scroll only when: streaming, user is at bottom, but anchor scrolled out of view
+  useEffect(() => {
+    if (streamingState?.isStreaming && isAtBottom && !isAnchorVisible && anchorRef.current) {
+      anchorRef.current.scrollIntoView({ behavior: 'instant', block: 'end' });
+    }
+  }, [streamingState?.content, isAtBottom, isAnchorVisible]);
+
+  // Empty state
+  if (!activeConversation || activeConversation.messages.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="text-center max-w-lg">
+          <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center">
+            <Sparkles className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-3">
+            A'Lester's Research Chatbot
+          </h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-8">
+            Ask questions about your indexed research papers. Get accurate
+            answers with source citations and full RAG pipeline transparency.
+          </p>
+
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => setActivePage('library')}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <BookOpen className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Library</span>
+            </button>
+            <button
+              onClick={openUploadPanel}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <Upload className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Upload</span>
+            </button>
+            <button
+              onClick={() => setActivePage('prompts')}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors shadow-sm"
+            >
+              <Settings className="w-4.5 h-4.5" />
+              <span className="font-medium text-sm">Prompts</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Group messages into query and all associated responses (RAG + web search)
+  const messageGroups: {
+    query: typeof activeConversation.messages[0];
+    responses: typeof activeConversation.messages
+  }[] = [];
+
+  let i = 0;
+  while (i < activeConversation.messages.length) {
+    const message = activeConversation.messages[i];
+
+    if (message.type === 'query') {
+      // Found a query, collect all following responses
+      const responses: typeof activeConversation.messages = [];
+      let j = i + 1;
+
+      // Collect all responses (both 'response' and 'web_search' types) until next query or end
+      while (j < activeConversation.messages.length && activeConversation.messages[j].type !== 'query') {
+        responses.push(activeConversation.messages[j]);
+        j++;
+      }
+
+      messageGroups.push({ query: message, responses });
+      i = j; // Move to next query
+    } else {
+      i++; // Skip orphaned response messages (shouldn't happen)
+    }
+  }
+
+  return (
+    <div ref={scrollRef} className="h-full overflow-y-auto p-4 md:p-6">
+      {/* Disable scroll anchoring on content so browser doesn't auto-jump */}
+      <div className="max-w-4xl mx-auto space-y-8" style={{ overflowAnchor: 'none' }}>
+        {messageGroups.map(({ query, responses }) => (
+          <div key={query.id} className="space-y-4">
+            {responses.length > 0 ? (
+              // Render all responses for this query
+              responses.map((response) => (
+                <ResponseCard key={response.id} queryMessage={query} responseMessage={response} />
+              ))
+            ) : (
+              /* Loading state for pending response with pipeline progress */
+              <div className="animate-fade-in">
+                <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
+                      <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <p className="text-gray-900 dark:text-gray-100 font-medium">
+                      {query.content}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Pipeline progress or simple loading */}
+                {pipelineProgress ? (
+                  <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
+                ) : (
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      <span className="text-gray-600 dark:text-gray-400">
+                        Processing your query...
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Show loading state when isLoading but no pending message */}
+        {isLoading && messageGroups.length > 0 && messageGroups[messageGroups.length - 1].responses.length > 0 && (
+          pipelineProgress ? (
+            <PipelineProgress steps={pipelineProgress} webSearchProgress={webSearchProgress} />
+          ) : (
+            <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 animate-fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-gray-600 dark:text-gray-400">
+                  Processing your query...
+                </span>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+      {/* Scroll anchor - used by Intersection Observer to detect if user is at bottom */}
+      <div ref={anchorRef} style={{ height: '1px', overflowAnchor: 'auto' }} />
+    </div>
+  );
+}
