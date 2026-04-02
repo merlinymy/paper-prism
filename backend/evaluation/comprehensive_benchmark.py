@@ -358,8 +358,8 @@ class QueryMetrics:
     context_precision: float    # % of retrieved chunks that are from relevant papers
     retrieval_count: int
     # Generation metrics
-    faithfulness: float         # % of answer claims supported by retrieved sources
-    claim_accuracy: float       # % of ground truth claims correctly reproduced
+    faithfulness: Optional[float]  # % of answer claims supported by sources (None = eval failed)
+    claim_accuracy: float          # % of ground truth claims correctly reproduced
     claims_verified: int
     claims_total: int
     claim_details: List[Dict[str, Any]]
@@ -533,10 +533,11 @@ def compute_faithfulness(
     sources: List[Dict[str, Any]],
     anthropic_client: Anthropic,
     model: str,
-) -> float:
+) -> Optional[float]:
     """What fraction of claims in the answer are supported by retrieved sources?
 
     Decomposes the answer into atomic claims, then checks each against sources.
+    Returns None if evaluation fails (excluded from averages).
     """
     sources_text = "\n---\n".join(
         s.get('text', '')[:500] for s in sources[:10]
@@ -568,10 +569,12 @@ Return JSON:
             total = data.get('total_claims', 1)
             supported = data.get('supported_claims', 0)
             return supported / max(total, 1)
+        else:
+            logger.warning(f"Faithfulness check: no JSON in response: {text[:100]}")
+            return None
     except Exception as e:
         logger.warning(f"Faithfulness check failed: {e}")
-
-    return 0.5  # Uncertain
+        return None
 
 
 def check_refusal(answer: str) -> bool:
@@ -681,6 +684,9 @@ def run_benchmark(
                 )
                 answer_completeness = claims_found / max(len(bq.ground_truth_claims), 1)
 
+                if faithfulness is None:
+                    logger.warning(f"  Faithfulness eval failed for {bq.query_id} — excluded from average")
+
                 metrics = QueryMetrics(
                     query_id=bq.query_id,
                     category=bq.category,
@@ -688,7 +694,7 @@ def run_benchmark(
                     context_recall=round(ctx_recall, 4),
                     context_precision=round(ctx_precision, 4),
                     retrieval_count=result.retrieval_count,
-                    faithfulness=round(faithfulness, 4),
+                    faithfulness=round(faithfulness, 4) if faithfulness is not None else None,
                     claim_accuracy=round(claim_acc, 4),
                     claims_verified=sum(1 for d in claim_details if d.get('correct')),
                     claims_total=len(bq.ground_truth_claims),
@@ -707,9 +713,10 @@ def run_benchmark(
             if bq.unanswerable:
                 logger.info(f"  Refusal: {'CORRECT' if metrics.correctly_refused else 'FAILED'}")
             else:
+                faithful_str = f"{metrics.faithfulness:.2f}" if metrics.faithfulness is not None else "N/A"
                 logger.info(
                     f"  ctx_recall={metrics.context_recall:.2f} ctx_prec={metrics.context_precision:.2f} "
-                    f"faithful={metrics.faithfulness:.2f} claims={metrics.claims_verified}/{metrics.claims_total} "
+                    f"faithful={faithful_str} claims={metrics.claims_verified}/{metrics.claims_total} "
                     f"cite_acc={metrics.citation_accuracy:.2f} complete={metrics.answer_completeness:.2f} "
                     f"({metrics.latency_ms:.0f}ms)"
                 )
@@ -719,7 +726,7 @@ def run_benchmark(
             all_metrics.append(QueryMetrics(
                 query_id=bq.query_id, category=bq.category, latency_ms=0,
                 context_recall=0, context_precision=0, retrieval_count=0,
-                faithfulness=0, claim_accuracy=0, claims_verified=0, claims_total=0,
+                faithfulness=None, claim_accuracy=0, claims_verified=0, claims_total=0,
                 claim_details=[], citation_count=0, citation_accuracy=0,
                 answer_completeness=0, correctly_refused=None,
                 answer_preview=f"ERROR: {e}", warnings=[str(e)],
@@ -732,17 +739,31 @@ def run_benchmark(
     def avg(vals):
         return round(sum(vals) / max(len(vals), 1), 4)
 
+    def avg_optional(vals):
+        """Average that excludes None values (failed evaluations)."""
+        valid = [v for v in vals if v is not None]
+        if not valid:
+            return 0.0
+        return round(sum(valid) / len(valid), 4)
+
+    # Count faithfulness eval failures
+    faith_failures = sum(1 for m in normal if m.faithfulness is None)
+    if faith_failures:
+        logger.warning(f"Faithfulness evaluation failed for {faith_failures}/{len(normal)} queries — excluded from average")
+
     # Per-category breakdown
     categories = set(m.category for m in all_metrics)
     by_category = {}
     for cat in sorted(categories):
         cat_metrics = [m for m in normal if m.category == cat]
         if cat_metrics:
+            cat_faith_valid = [m.faithfulness for m in cat_metrics if m.faithfulness is not None]
             by_category[cat] = {
                 "count": len(cat_metrics),
                 "avg_context_recall": avg([m.context_recall for m in cat_metrics]),
                 "avg_context_precision": avg([m.context_precision for m in cat_metrics]),
-                "avg_faithfulness": avg([m.faithfulness for m in cat_metrics]),
+                "avg_faithfulness": round(sum(cat_faith_valid) / max(len(cat_faith_valid), 1), 4),
+                "faithfulness_eval_failures": sum(1 for m in cat_metrics if m.faithfulness is None),
                 "avg_claim_accuracy": avg([m.claim_accuracy for m in cat_metrics]),
                 "avg_citation_accuracy": avg([m.citation_accuracy for m in cat_metrics]),
                 "avg_completeness": avg([m.answer_completeness for m in cat_metrics]),
@@ -761,7 +782,7 @@ def run_benchmark(
         avg_latency_ms=avg([m.latency_ms for m in all_metrics]),
         avg_context_recall=avg([m.context_recall for m in normal]) if normal else 0,
         avg_context_precision=avg([m.context_precision for m in normal]) if normal else 0,
-        avg_faithfulness=avg([m.faithfulness for m in normal]) if normal else 0,
+        avg_faithfulness=avg_optional([m.faithfulness for m in normal]),
         avg_claim_accuracy=avg([m.claim_accuracy for m in normal]) if normal else 0,
         avg_citation_accuracy=avg([m.citation_accuracy for m in normal]) if normal else 0,
         avg_answer_completeness=avg([m.answer_completeness for m in normal]) if normal else 0,
