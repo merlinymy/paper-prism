@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key for Claude")
     voyage_api_key: Optional[str] = Field(default=None, description="Voyage AI API key for embeddings")
     cohere_api_key: Optional[str] = Field(default=None, description="Cohere API key for reranking")
+    open_ai_api_key: Optional[str] = Field(default=None, description="OpenAI API key for benchmark evaluation (cross-family)")
 
     # Database Settings
     database_url: str = Field(default="sqlite:///./data/app.db", description="SQLite database URL")

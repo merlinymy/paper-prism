@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config import settings
 from anthropic import Anthropic
+from openai import OpenAI
 from retrieval.embedder import VoyageEmbedder
 from retrieval.reranker import CohereReranker
 from retrieval.qdrant_store import QdrantStore
@@ -476,10 +477,13 @@ def compute_claim_accuracy(
     answer: str,
     sources_text: str,
     ground_truth_claims: List[GroundTruthClaim],
-    anthropic_client: Anthropic,
-    model: str,
+    openai_client: OpenAI,
+    eval_model: str,
 ) -> Tuple[float, List[Dict[str, Any]]]:
     """Verify each ground-truth claim against the generated answer.
+
+    Uses a different model family (OpenAI) than the generator (Claude)
+    to avoid self-evaluation bias.
 
     Returns (accuracy_score, claim_details).
     """
@@ -509,13 +513,13 @@ For each claim, respond with a JSON array:
 - If found=false, correct should also be false"""
 
     try:
-        response = anthropic_client.messages.create(
-            model=model,
+        response = openai_client.chat.completions.create(
+            model=eval_model,
             max_tokens=1000,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         json_start = text.find('[')
         json_end = text.rfind(']') + 1
         if json_start >= 0 and json_end > json_start:
@@ -531,12 +535,14 @@ For each claim, respond with a JSON array:
 def compute_faithfulness(
     answer: str,
     sources: List[Dict[str, Any]],
-    anthropic_client: Anthropic,
-    model: str,
+    openai_client: OpenAI,
+    eval_model: str,
 ) -> Optional[float]:
     """What fraction of claims in the answer are supported by retrieved sources?
 
     Decomposes the answer into atomic claims, then checks each against sources.
+    Uses a different model family (OpenAI) than the generator (Claude)
+    to avoid self-evaluation bias.
     Returns None if evaluation fails (excluded from averages).
     """
     sources_text = "\n---\n".join(
@@ -555,13 +561,13 @@ Return JSON:
 {{"total_claims": <int>, "supported_claims": <int>, "unsupported_claims": [list of unsupported claim strings]}}"""
 
     try:
-        response = anthropic_client.messages.create(
-            model=model,
+        response = openai_client.chat.completions.create(
+            model=eval_model,
             max_tokens=800,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         json_start = text.find('{')
         json_end = text.rfind('}') + 1
         if json_start >= 0 and json_end > json_start:
@@ -597,8 +603,8 @@ def check_refusal(answer: str) -> bool:
 def run_benchmark(
     queries: List[BenchmarkQuery],
     engine: QueryEngine,
-    anthropic_client: Anthropic,
-    eval_model: str = "claude-sonnet-4-5-20250929",
+    openai_client: OpenAI,
+    eval_model: str = "gpt-5.4-mini",
 ) -> BenchmarkResults:
     """Run the full benchmark suite."""
 
@@ -651,16 +657,16 @@ def run_benchmark(
                 # Normal query — compute all metrics
                 sources_text = " ".join(s.get('text', '') for s in result.sources[:10])
 
-                # Claim accuracy
+                # Claim accuracy (evaluated by OpenAI to avoid self-evaluation bias)
                 claim_acc, claim_details = compute_claim_accuracy(
                     result.answer, sources_text,
-                    bq.ground_truth_claims, anthropic_client, eval_model,
+                    bq.ground_truth_claims, openai_client, eval_model,
                 )
 
-                # Faithfulness
+                # Faithfulness (evaluated by OpenAI to avoid self-evaluation bias)
                 faithfulness = compute_faithfulness(
                     result.answer, result.sources,
-                    anthropic_client, eval_model,
+                    openai_client, eval_model,
                 )
 
                 # Citation accuracy
@@ -823,7 +829,17 @@ def main():
     logger.info(f"Running {len(queries)} benchmark queries (suite={args.suite})")
 
     # Initialize components
+    # Generation: Claude Sonnet (cheaper than Opus for benchmarking)
+    # Evaluation: OpenAI gpt-5.4-mini (cross-family to avoid self-evaluation bias)
     anthropic_client = Anthropic(api_key=settings.anthropic_api_key)
+    openai_client = OpenAI(api_key=settings.open_ai_api_key)
+
+    generation_model = settings.claude_model_classifier  # Sonnet — cheaper for benchmarks
+    eval_model = "gpt-5.4-mini"
+
+    logger.info(f"Generation model: {generation_model} (Claude)")
+    logger.info(f"Evaluation model: {eval_model} (OpenAI — cross-family evaluation)")
+
     store = QdrantStore(
         collection_name=settings.qdrant_collection_name,
         embedding_dimension=settings.embedding_dimension,
@@ -835,7 +851,7 @@ def main():
         reranker=CohereReranker(api_key=settings.cohere_api_key),
         store=store,
         anthropic_client=anthropic_client,
-        claude_model=settings.claude_model,
+        claude_model=generation_model,  # Sonnet for benchmark generation
         claude_model_fast=settings.claude_model_fast,
         claude_model_classifier=settings.claude_model_classifier,
         enable_classification=True,
@@ -849,7 +865,7 @@ def main():
     logger.info("Resolving gold chunk IDs against Qdrant...")
     _resolve_gold_chunk_ids(queries, store)
 
-    results = run_benchmark(queries, engine, anthropic_client)
+    results = run_benchmark(queries, engine, openai_client, eval_model=eval_model)
 
     # Save results
     output_path = Path(args.output)
