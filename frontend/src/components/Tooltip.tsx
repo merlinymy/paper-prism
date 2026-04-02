@@ -103,7 +103,7 @@ export function Tooltip({
           className={`absolute z-50 ${positionClasses[adjustedPosition]} pointer-events-none`}
         >
           <span className="relative block">
-            <span className="block px-3 py-1.5 text-xs leading-relaxed text-white bg-gray-800 dark:bg-gray-700 rounded-lg shadow-lg min-w-48 max-w-sm whitespace-normal">
+            <span className="block px-3 py-2 text-xs leading-relaxed text-white bg-gray-800 dark:bg-gray-700 rounded-lg shadow-lg min-w-48 max-w-md whitespace-normal">
               {content}
             </span>
             <span

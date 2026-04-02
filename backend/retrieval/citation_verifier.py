@@ -78,32 +78,62 @@ class CitationVerifier:
     def extract_citations(self, answer: str) -> Dict[int, List[str]]:
         """Extract all citations and their associated claims from answer.
 
+        Splits on paragraph boundaries first, then sentences within each paragraph.
+        Each usage of a citation gets its own claim entry, even if the same source
+        is cited multiple times — different paragraphs make different claims.
+
         Args:
             answer: LLM-generated answer text
 
         Returns:
-            Dict mapping source_id to list of claims citing that source
+            Dict mapping source_id to list of claims citing that source.
+            Claims are never deduplicated — each usage is tracked separately.
         """
-        citations = {}
+        citations: Dict[int, List[str]] = {}
 
-        # Split answer into sentences
-        sentences = re.split(r'(?<=[.!?])\s+', answer)
+        # Split into paragraphs first (respects markdown structure)
+        paragraphs = re.split(r'\n\s*\n|\n(?=[-*•]|\d+\.)', answer)
 
-        for sentence in sentences:
-            # Find all citations in this sentence
-            matches = self.CITATION_PATTERN.findall(sentence)
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
 
-            for match in matches:
-                # Handle multiple citations like [1, 2, 3]
-                source_ids = [int(s.strip()) for s in match.split(',')]
+            # Split paragraph into sentences, preserving abbreviations
+            # Use a pattern that avoids splitting on common abbreviations
+            sentences = re.split(
+                r'(?<=[.!?])\s+(?=[A-Z\[\(])',
+                paragraph
+            )
+            # If no split happened, use the whole paragraph as one unit
+            if len(sentences) == 1 and len(paragraph) > 300:
+                # Long paragraph without clear sentence boundaries — use as-is
+                sentences = [paragraph]
 
-                # Remove the citation from the claim text
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+
+                matches = self.CITATION_PATTERN.findall(sentence)
+                if not matches:
+                    continue
+
+                # The claim is the full sentence with citation markers removed
                 claim = self.CITATION_PATTERN.sub('', sentence).strip()
+                # Clean up leftover punctuation artifacts
+                claim = re.sub(r'\s{2,}', ' ', claim).strip()
+                claim = claim.strip('.,;: ')
 
-                for source_id in source_ids:
-                    if source_id not in citations:
-                        citations[source_id] = []
-                    if claim and claim not in citations[source_id]:
+                if not claim or len(claim) < 10:
+                    continue
+
+                for match in matches:
+                    source_ids = [int(s.strip()) for s in match.split(',')]
+                    for source_id in source_ids:
+                        if source_id not in citations:
+                            citations[source_id] = []
+                        # Always append — each usage is a separate claim
                         citations[source_id].append(claim)
 
         return citations
@@ -141,15 +171,21 @@ class CitationVerifier:
         )
 
         # Check how many claim words appear in source
-        matches = sum(1 for w in claim_words if w in source_lower)
-        overlap = matches / len(claim_words) if claim_words else 0
+        matched_words = [w for w in claim_words if w in source_lower]
+        missing_words = [w for w in claim_words if w not in source_lower]
+        overlap = len(matched_words) / len(claim_words) if claim_words else 0
 
+        # Build a descriptive explanation
         if overlap >= 0.6:
-            return True, overlap, "High keyword overlap with source"
+            explanation = f"Key terms found in source: {', '.join(list(matched_words)[:5])}"
+            return True, overlap, explanation
         elif overlap >= 0.3:
-            return True, overlap, "Moderate keyword overlap with source"
+            explanation = (f"Partial match — found: {', '.join(list(matched_words)[:3])}"
+                          f"; missing: {', '.join(list(missing_words)[:3])}")
+            return True, overlap, explanation
         else:
-            return False, overlap, "Low keyword overlap - citation may be incorrect"
+            explanation = f"Key terms not found in source: {', '.join(list(missing_words)[:4])}"
+            return False, overlap, explanation
 
     def verify_citation_llm(
         self,
@@ -170,44 +206,53 @@ class CitationVerifier:
         if not self.anthropic:
             return self.verify_citation_basic(claim, source_text)
 
-        prompt = f'''Verify if this claim is supported by the source text.
+        import json as _json
+
+        prompt = f'''Does this source text contain evidence that supports the specific claim below?
 
 Claim: "{claim}"
 
 Source ({source_title}):
 "{source_text[:1500]}"
 
-Answer with:
-1. SUPPORTED, PARTIALLY_SUPPORTED, or NOT_SUPPORTED
-2. Confidence (0-1)
-3. Brief explanation
+Focus on whether the SOURCE TEXT directly supports the SPECIFIC FACTS in the claim — not just whether the topics overlap. Check numbers, methods, conclusions, and causal relationships.
 
-Format: VERDICT | CONFIDENCE | EXPLANATION'''
+Respond with a JSON object only, no other text:
+{{"verdict": "SUPPORTED" or "PARTIALLY_SUPPORTED" or "NOT_SUPPORTED", "confidence": 0.0-1.0, "explanation": "detailed explanation of what specifically matches or does not match, referencing specific content from the source"}}'''
 
         try:
             response = self.anthropic.messages.create(
                 model=self.model,
-                max_tokens=150,
+                max_tokens=500,
                 temperature=0,
                 messages=[{"role": "user", "content": prompt}]
             )
 
             result = response.content[0].text.strip()
-            parts = result.split('|')
 
-            if len(parts) >= 3:
-                verdict = parts[0].strip().upper()
-                confidence = float(parts[1].strip())
-                explanation = parts[2].strip()
+            # Parse JSON response
+            # Find JSON object in response (in case LLM adds surrounding text)
+            json_start = result.find('{')
+            json_end = result.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                data = _json.loads(result[json_start:json_end])
+                verdict = str(data.get("verdict", "NOT_SUPPORTED")).upper()
+                confidence = float(data.get("confidence", 0.5))
+                explanation = str(data.get("explanation", ""))
+            else:
+                logger.warning(f"No JSON found in citation verification response: {result[:100]}")
+                return self.verify_citation_basic(claim, source_text)
 
-                is_valid = verdict in ["SUPPORTED", "PARTIALLY_SUPPORTED"]
-                return is_valid, confidence, explanation
+            confidence = max(0.0, min(1.0, confidence))
+            is_valid = verdict in ["SUPPORTED", "PARTIALLY_SUPPORTED"]
+            return is_valid, confidence, explanation or "No details provided"
 
+        except (_json.JSONDecodeError, ValueError, KeyError) as e:
+            logger.warning(f"Failed to parse citation verification JSON: {e}")
+            return self.verify_citation_basic(claim, source_text)
         except Exception as e:
             logger.warning(f"LLM verification failed: {e}")
-
-        # Fallback to basic verification
-        return self.verify_citation_basic(claim, source_text)
+            return self.verify_citation_basic(claim, source_text)
 
     def verify_answer(
         self,
@@ -233,6 +278,16 @@ Format: VERDICT | CONFIDENCE | EXPLANATION'''
 
             if source_idx < 0 or source_idx >= len(sources):
                 warnings.append(f"Citation [Source {source_id}] references non-existent source")
+                for claim in claims:
+                    checks.append(CitationCheck(
+                        citation_id=source_id,
+                        claim=claim,
+                        source_text="",
+                        source_title=f"Source {source_id}",
+                        is_valid=False,
+                        confidence=0.0,
+                        explanation=f"Source {source_id} does not exist",
+                    ))
                 continue
 
             source = sources[source_idx]
@@ -295,7 +350,15 @@ Format: VERDICT | CONFIDENCE | EXPLANATION'''
 
         if source_idx < 0 or source_idx >= len(sources):
             logger.warning(f"Citation [Source {source_id}] references non-existent source")
-            return None
+            return CitationCheck(
+                citation_id=source_id,
+                claim=claim,
+                source_text="",
+                source_title=f"Source {source_id}",
+                is_valid=False,
+                confidence=0.0,
+                explanation=f"Source {source_id} does not exist",
+            )
 
         source = sources[source_idx]
         source_text = source.get('text', '')
@@ -373,7 +436,7 @@ class StreamingCitationVerifier:
         self.sources = sources
         self.on_citation_verified = on_citation_verified
         self.buffer = ""
-        self.verified_claims: set = set()  # Track which claims we've already verified
+        self.verified_claims: set = set()  # Track (source_id, claim_prefix) pairs already verified
 
     def process_chunk(self, chunk: str) -> None:
         """Process a new chunk of streamed text.
@@ -409,6 +472,9 @@ class StreamingCitationVerifier:
     def _verify_sentence(self, sentence: str) -> None:
         """Verify all citations in a sentence.
 
+        Each (source_id, claim) pair is verified independently — the same source
+        cited in different contexts gets separate verification.
+
         Args:
             sentence: Complete sentence to check for citations
         """
@@ -423,22 +489,21 @@ class StreamingCitationVerifier:
 
         # Extract the claim (sentence without citation markers)
         claim = CitationVerifier.CITATION_PATTERN.sub('', sentence).strip()
+        claim = re.sub(r'\s{2,}', ' ', claim).strip()
 
-        if not claim:
+        if not claim or len(claim) < 10:
             return
 
-        # Create a unique key for this claim to avoid duplicate verification
-        claim_key = claim.lower()
-        if claim_key in self.verified_claims:
-            return
-
-        self.verified_claims.add(claim_key)
-
-        # Verify each cited source
+        # Verify each cited source — dedup by (source_id, claim) pair
         for match in matches:
             source_ids = [int(s.strip()) for s in match.split(',')]
 
             for source_id in source_ids:
+                dedup_key = (source_id, claim.lower()[:100])
+                if dedup_key in self.verified_claims:
+                    continue
+                self.verified_claims.add(dedup_key)
+
                 check = self.verifier.verify_single_citation(
                     claim=claim,
                     source_id=source_id,

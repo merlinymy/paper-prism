@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Globe,
   ExternalLink,
+  X,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -98,6 +99,76 @@ function getCitationStyle(check: CitationCheck | undefined, isChecking: boolean 
   }
 }
 
+// Modal for showing full citation verification details
+function CitationModal({
+  citationId,
+  check,
+  style,
+  onClose,
+}: {
+  citationId: number;
+  check: CitationCheck;
+  style: ReturnType<typeof getCitationStyle>;
+  onClose: () => void;
+}) {
+  const confidence = Math.round(check.confidence * 100);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${style.bg} ${style.text} ${style.border}`}>
+              Source {citationId}
+            </span>
+            <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              {style.label} — {confidence}% confidence
+            </span>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors">
+            <X className="w-4 h-4 text-gray-500" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* Claim */}
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Claim</h4>
+            <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+              {check.claim}
+            </p>
+          </div>
+
+          {/* Explanation */}
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Verification</h4>
+            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+              {check.explanation}
+            </p>
+          </div>
+
+          {/* Confidence bar */}
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">Confidence</h4>
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all ${
+                  confidence >= 70 ? 'bg-green-500' : confidence >= 30 ? 'bg-amber-500' : 'bg-red-500'
+                }`}
+                style={{ width: `${confidence}%` }}
+              />
+            </div>
+            <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 block">{confidence}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Component to render a single citation with verification status
 function CitationBadge({
   citationId,
@@ -108,71 +179,99 @@ function CitationBadge({
   check: CitationCheck | undefined;
   isChecking?: boolean;
 }) {
+  const [showModal, setShowModal] = useState(false);
   const style = getCitationStyle(check, isChecking);
   const confidence = check ? Math.round(check.confidence * 100) : null;
 
-  const tooltipContent = check ? (
-    <span className="block max-w-xs">
-      <span className="block font-medium mb-1">
-        {style.label} ({confidence}% confidence)
-      </span>
-      <span className="block text-xs opacity-80">{check.explanation}</span>
+  const hintContent = check ? (
+    <span className="block">
+      {style.label} ({confidence}%) — click for details
     </span>
   ) : isChecking ? (
     <span className="block">Verifying citation...</span>
   ) : (
-    <span className="block max-w-xs">
-      <span className="block font-medium mb-1">Source {citationId}</span>
-      <span className="block text-xs opacity-80">
-        This citation references Source {citationId} from the retrieved documents.
-        {' '}Enable citation verification in settings to check accuracy.
-      </span>
-    </span>
+    <span className="block">Source {citationId} — not verified</span>
   );
 
   return (
-    <Tooltip content={tooltipContent}>
-      <span
-        className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border cursor-help ${style.bg} ${style.text} ${style.border} ${style.animate ? 'animate-pulse' : ''}`}
-      >
-        Source {citationId}
-        {confidence !== null && (
-          <span className="ml-1 opacity-70">{confidence}%</span>
-        )}
-        {style.animate && (
-          <span className="ml-1">
-            <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          </span>
-        )}
-      </span>
-    </Tooltip>
+    <>
+      <Tooltip content={hintContent}>
+        <span
+          onClick={check ? (e) => { e.stopPropagation(); setShowModal(true); } : undefined}
+          className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border ${
+            check ? 'cursor-pointer hover:opacity-80' : isChecking ? 'cursor-wait' : 'cursor-default'
+          } ${style.bg} ${style.text} ${style.border} ${style.animate ? 'animate-pulse' : ''} transition-opacity`}
+        >
+          Source {citationId}
+          {confidence !== null && (
+            <span className="ml-1 opacity-70">{confidence}%</span>
+          )}
+          {style.animate && (
+            <span className="ml-1">
+              <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </span>
+          )}
+        </span>
+      </Tooltip>
+      {showModal && check && (
+        <CitationModal
+          citationId={citationId}
+          check={check}
+          style={style}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+    </>
   );
 }
 
-// Build citation check map from array
+// Build citation check map from array — stores all checks per citation for per-usage matching
 function buildCitationCheckMap(
   citationChecks: CitationCheck[] | undefined
-): Map<number, CitationCheck> {
-  const checkMap = new Map<number, CitationCheck>();
+): Map<number, CitationCheck[]> {
+  const checkMap = new Map<number, CitationCheck[]>();
   if (citationChecks) {
     for (const check of citationChecks) {
-      // Group checks by citation_id, keep the one with lowest confidence (most concerning)
-      const existing = checkMap.get(check.citation_id);
-      if (!existing || check.confidence < existing.confidence) {
-        checkMap.set(check.citation_id, check);
-      }
+      const existing = checkMap.get(check.citation_id) || [];
+      existing.push(check);
+      checkMap.set(check.citation_id, existing);
     }
   }
   return checkMap;
 }
 
+// Find the best matching check for a citation based on surrounding text context
+function findBestCheck(
+  checks: CitationCheck[] | undefined,
+  surroundingText: string
+): CitationCheck | undefined {
+  if (!checks || checks.length === 0) return undefined;
+  if (checks.length === 1) return checks[0];
+
+  // Score each check by how many words from its claim appear in the surrounding text
+  const contextLower = surroundingText.toLowerCase();
+  let bestCheck = checks[0];
+  let bestScore = -1;
+
+  for (const check of checks) {
+    const claimWords = check.claim.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const score = claimWords.filter(w => contextLower.includes(w)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCheck = check;
+    }
+  }
+
+  return bestCheck;
+}
+
 // Process text content to replace citation patterns with styled badges
 function processTextWithCitations(
   text: string,
-  checkMap: Map<number, CitationCheck>,
+  checkMap: Map<number, CitationCheck[]>,
   isCheckingCitations: boolean = false
 ): React.ReactNode[] {
   // Pattern to match various citation formats:
@@ -193,6 +292,9 @@ function processTextWithCitations(
       parts.push(text.slice(lastIndex, match.index));
     }
 
+    // Get surrounding text for context matching (text before this citation in this block)
+    const surroundingText = text.slice(Math.max(0, match.index - 200), match.index);
+
     // Parse citation IDs - extract all numbers from the match
     // This handles "Source 8, Source 9" and "8, 9" formats
     const numberPattern = /\d+/g;
@@ -202,11 +304,11 @@ function processTextWithCitations(
       ids.push(parseInt(numMatch[0], 10));
     }
 
-    // Add citation badges
+    // Add citation badges — match each to the most relevant check for this context
     ids.forEach((id, idx) => {
       if (idx > 0) parts.push(', ');
-      const check = checkMap.get(id);
-      // If checking is in progress and we don't have a check for this citation yet, show checking state
+      const checks = checkMap.get(id);
+      const check = findBestCheck(checks, surroundingText);
       const showChecking = isCheckingCitations && !check;
       parts.push(
         <CitationBadge
@@ -232,7 +334,7 @@ function processTextWithCitations(
 // Process React children recursively to highlight citations
 function processChildrenWithCitations(
   children: React.ReactNode,
-  checkMap: Map<number, CitationCheck>,
+  checkMap: Map<number, CitationCheck[]>,
   isCheckingCitations: boolean = false
 ): React.ReactNode {
   if (typeof children === 'string') {
@@ -252,7 +354,7 @@ function processChildrenWithCitations(
 }
 
 // Create custom markdown components that highlight citations
-function createCitationComponents(checkMap: Map<number, CitationCheck>, isCheckingCitations: boolean = false) {
+function createCitationComponents(checkMap: Map<number, CitationCheck[]>, isCheckingCitations: boolean = false) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const processChildren = (props: any) => processChildrenWithCitations(props.children, checkMap, isCheckingCitations);
 
@@ -392,7 +494,7 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
             </p>
 
             {metadata?.queryType && (
-              <div className="flex items-center gap-4 mt-2 text-sm">
+              <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
                 <div className="flex items-center gap-1.5 text-gray-600 dark:text-gray-400">
                   <Tag className="w-4 h-4" />
                   <span>
@@ -400,14 +502,33 @@ export function ResponseCard({ queryMessage, responseMessage }: ResponseCardProp
                     <span className="font-medium text-blue-600 dark:text-blue-400 uppercase">
                       {metadata.queryType}
                     </span>
+                    {metadata.secondaryTypes && metadata.secondaryTypes.length > 0 && (
+                      <span className="text-gray-400 dark:text-gray-500">
+                        {' + '}
+                        {metadata.secondaryTypes.map((s, i) => (
+                          <span key={s.type}>
+                            <span className="uppercase">{s.type}</span>
+                            {i < metadata.secondaryTypes!.length - 1 && ', '}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
                 </div>
 
-                {metadata.expandedQuery && (
+                {metadata.expansionTerms && metadata.expansionTerms.length > 0 && (
                   <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-500">
-                    <span className="truncate max-w-xs">
-                      Expanded: "{metadata.expandedQuery}"
+                    <Search className="w-3.5 h-3.5" />
+                    <span className="truncate max-w-sm">
+                      +{metadata.expansionTerms.join(', ')}
                     </span>
+                  </div>
+                )}
+
+                {metadata.reRetrievalTriggered && (
+                  <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Re-retrieved</span>
                   </div>
                 )}
               </div>
