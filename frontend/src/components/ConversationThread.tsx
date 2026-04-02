@@ -101,10 +101,24 @@ function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInf
             )}
             {/* Show step data if available */}
             {step.data && step.status === 'completed' && (
-              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 text-center">
                 {typeof step.data.count === 'number' && `${step.data.count}`}
-                {typeof step.data.type === 'string' && `${step.data.type}`}
+                {typeof step.data.type === 'string' && (
+                  <>
+                    {step.data.type}
+                    {Array.isArray(step.data.secondary_types) && step.data.secondary_types.length > 0 && (
+                      <span className="text-gray-300 dark:text-gray-600">
+                        {' +'}
+                        {(step.data.secondary_types as Array<{type: string}>).map(s => s.type).join(', ')}
+                      </span>
+                    )}
+                  </>
+                )}
                 {Array.isArray(step.data.found) && step.data.found.length > 0 && `${step.data.found.length}`}
+                {Array.isArray(step.data.added_terms) && step.data.added_terms.length > 0 && `${step.data.added_terms.length} terms`}
+                {typeof step.data.confidence === 'number' && step.name === 'quality_eval' && `${step.data.confidence}/5`}
+                {step.data.improved === true && 'improved'}
+                {step.data.improved === false && step.name === 're_retrieval' && 'no change'}
               </span>
             )}
           </div>

@@ -130,7 +130,10 @@ class CohereReranker:
             if paper_id not in paper_counts:
                 paper_counts[paper_id] = 0
 
-            if paper_counts[paper_id] < max_per_paper:
+            score = doc.get('rerank_score', 0)
+            within_quota = paper_counts[paper_id] < max_per_paper
+            high_score_overflow = score > 0.5 and paper_counts[paper_id] < max_per_paper * 2
+            if within_quota or high_score_overflow:
                 deduplicated.append(doc)
                 paper_counts[paper_id] += 1
 

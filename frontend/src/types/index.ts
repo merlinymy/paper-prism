@@ -62,7 +62,9 @@ export interface Message {
   timestamp: Date;
   metadata?: {
     queryType?: QueryType;
+    secondaryTypes?: Array<{ type: string; confidence: number }>;
     expandedQuery?: string;
+    expansionTerms?: string[];
     entities?: Entity[];
     sources?: Source[];
     citationScore?: number;
@@ -71,6 +73,7 @@ export interface Message {
     latency?: number;
     warnings?: string[];
     citationChecks?: CitationCheck[];
+    reRetrievalTriggered?: boolean;
     // Web search specific
     isWebSearch?: boolean;
     webSearchSources?: Array<{ url: string; title: string }>;
@@ -336,13 +339,14 @@ export interface PipelineStep {
 
 // Pipeline step names for streaming progress
 export type PipelineStepName =
-  | 'rewriting'
   | 'entities'
   | 'classification'
   | 'expansion'
   | 'hyde'
   | 'retrieval'
   | 'reranking'
+  | 'quality_eval'
+  | 're_retrieval'
   | 'generation'
   | 'answer_chunk'
   | 'answer_complete'
@@ -373,13 +377,14 @@ export interface PipelineStepInfo {
 
 // All pipeline steps for streaming display
 export const PIPELINE_STEPS: Array<{ name: PipelineStepName; label: string; description: string }> = [
-  { name: 'rewriting', label: 'Query Rewriting', description: 'Correcting spelling and formatting' },
   { name: 'entities', label: 'Entity Extraction', description: 'Identifying key terms' },
   { name: 'classification', label: 'Classification', description: 'Determining query type' },
   { name: 'expansion', label: 'Query Expansion', description: 'Adding synonyms' },
   { name: 'hyde', label: 'HyDE Embedding', description: 'Generating hypothetical document' },
   { name: 'retrieval', label: 'Retrieval', description: 'Searching documents' },
   { name: 'reranking', label: 'Reranking', description: 'Ranking by relevance' },
+  { name: 'quality_eval', label: 'Quality Check', description: 'Evaluating retrieval coverage' },
+  { name: 're_retrieval', label: 'Re-Retrieval', description: 'Targeted search for missing info' },
   { name: 'generation', label: 'Generation', description: 'Creating answer' },
   { name: 'verification', label: 'Verification', description: 'Checking citations' },
   { name: 'web_search', label: 'Web Search', description: 'Searching the web for additional context' },

@@ -31,7 +31,6 @@ from .query_expander import QueryExpander
 # New imports for advanced features
 from .cache import RAGCache
 from .hyde import HyDE, HyDEEmbedder
-from .query_rewriter import QueryRewriter
 from .entity_extractor import EntityExtractor, LLMEntityExtractor
 from .citation_verifier import CitationVerifier, VerificationResult, StreamingCitationVerifier
 from .conversation_memory import ConversationMemory
@@ -455,7 +454,6 @@ class QueryEngine:
         # New options for advanced features
         enable_caching: bool = True,
         enable_hyde: bool = False,
-        enable_query_rewriting: bool = True,
         enable_entity_extraction: bool = True,
         enable_citation_verification: bool = False,
         enable_conversation_memory: bool = True,
@@ -474,7 +472,6 @@ class QueryEngine:
             enable_expansion: Whether to expand queries with synonyms
             enable_caching: Whether to cache embeddings and results
             enable_hyde: Whether to use HyDE for query embedding
-            enable_query_rewriting: Whether to rewrite/correct queries
             enable_entity_extraction: Whether to extract entities for boosting
             enable_citation_verification: Whether to verify LLM citations
             enable_conversation_memory: Whether to track conversation context
@@ -485,6 +482,7 @@ class QueryEngine:
         self.store = store
         self.anthropic = anthropic_client
         self.claude_model = claude_model
+        self.claude_model_fast = claude_model_fast
         self.enable_classification = enable_classification
         self.enable_expansion = enable_expansion
         self.enable_hybrid_search = enable_hybrid_search
@@ -495,7 +493,10 @@ class QueryEngine:
             anthropic_client,
             model=claude_model_classifier,
         ) if enable_classification else None
-        self.expander = QueryExpander() if enable_expansion else None
+        self.expander = QueryExpander(
+            anthropic_client=anthropic_client,
+            model=claude_model_fast,
+        ) if enable_expansion else None
 
         # Initialize advanced components
         self.cache = RAGCache() if enable_caching else None
@@ -508,11 +509,6 @@ class QueryEngine:
             )
         else:
             self.hyde_embedder = None
-        self.query_rewriter = QueryRewriter(
-            anthropic_client=anthropic_client,
-            model=claude_model_fast,
-            enable_llm_rewrite=False,  # Use rule-based only by default
-        ) if enable_query_rewriting else None
         self.entity_extractor = LLMEntityExtractor(
             anthropic_client=anthropic_client,
             model=claude_model_fast,
@@ -525,7 +521,7 @@ class QueryEngine:
 
         logger.info(
             f"Initialized QueryEngine (cache={enable_caching}, hyde={enable_hyde}, "
-            f"rewrite={enable_query_rewriting}, entities={enable_entity_extraction}, "
+            f"entities={enable_entity_extraction}, "
             f"citations={enable_citation_verification}, memory={enable_conversation_memory})"
         )
 
@@ -606,23 +602,8 @@ class QueryEngine:
                 logger.debug(f"Resolved references: '{query}' -> '{resolved_query}'")
                 query = resolved_query
 
-        # Step 1: Query rewriting and spelling correction
-        emit("rewriting", {"status": "starting"})
-        if self.query_rewriter:
-            rewrite_result = self.query_rewriter.rewrite(query)
-            rewritten_query = rewrite_result.rewritten
-            if rewrite_result.corrections:
-                logger.info(f"Corrected spelling: {rewrite_result.corrections}")
-            if rewritten_query != query:
-                logger.debug(f"Query rewritten: '{query}' -> '{rewritten_query}'")
-                emit("rewriting", {"original": query, "rewritten": rewritten_query, "changed": True})
-            else:
-                # Ran but no changes - treat as skipped
-                emit("rewriting", {"query": query, "changed": False, "skipped": True})
-        else:
-            emit("rewriting", {"query": query, "changed": False, "skipped": True})
-
-        # Step 2: Entity extraction for later boosting
+        # Step 1: Entity extraction for later boosting
+        rewritten_query = query
         emit("entities", {"status": "starting"})
         if self.entity_extractor:
             entities = self.entity_extractor.extract(rewritten_query)
@@ -638,7 +619,9 @@ class QueryEngine:
             emit("entities", {"found": [], "skipped": True})
 
         # Step 3: Classify query (or use override if provided)
+        # Uses multi-classification (top-2 types) for broader retrieval when available
         emit("classification", {"status": "starting"})
+        multi_class = None
         if query_type_override:
             # User specified query type - skip classification
             try:
@@ -658,9 +641,18 @@ class QueryEngine:
             )
             logger.info(f"Using user-specified query type: {query_type.value}")
         elif self.enable_classification and self.classifier:
-            # Full LLM classification
-            classification = self.classifier.classify(rewritten_query)
-            query_type = classification.query_type
+            # Dual-strategy: classify into top-2 types, merge chunk types for broader search
+            multi_class = self.classifier.classify_multi(rewritten_query)
+            query_type = multi_class.primary_type
+            classification = QueryClassification(
+                query_type=multi_class.primary_type,
+                confidence=multi_class.query_types[0][1],
+                entities=multi_class.entities,
+                needs_cross_corpus=multi_class.needs_cross_corpus,
+                suggested_chunk_types=multi_class.merged_chunk_types,
+                suggested_top_k=None,
+                reasoning=multi_class.reasoning,
+            )
         else:
             # Hybrid approach: targeted retrieval for methods/limitations, universal for rest
             query_type = self._detect_targeted_query_type(rewritten_query)
@@ -675,12 +667,21 @@ class QueryEngine:
                 reasoning=f"Hybrid retrieval - {query_type.value}",
             )
 
-        logger.info(f"Query classified as: {query_type.value}")
+        secondary_types = []
+        if multi_class and len(multi_class.query_types) >= 2:
+            secondary_types = [
+                {"type": qt.value, "confidence": conf}
+                for qt, conf in multi_class.query_types[1:]
+            ]
+
+        logger.info(f"Query classified as: {query_type.value}" +
+                     (f" (also: {', '.join(t['type'] for t in secondary_types)})" if secondary_types else ""))
         emit("classification", {
             "type": query_type.value,
             "confidence": classification.confidence,
             "reasoning": classification.reasoning,
             "chunk_types": classification.suggested_chunk_types,
+            "secondary_types": secondary_types,
         })
 
         # Step 4: Expand query with synonyms (respects override)
@@ -701,13 +702,32 @@ class QueryEngine:
         # End query processing timing (steps 1-4)
         timing_query_processing_ms = (time.perf_counter() - timing_query_processing_start) * 1000
 
-        # Step 5: Get retrieval strategy
-        strategy = RETRIEVAL_STRATEGIES[query_type]
-        chunk_types = strategy["chunk_types"]
-        strategy_top_k = strategy["top_k"]
-        rerank_top_n = strategy["rerank_top_n"]
-        max_per_paper = strategy.get("max_per_paper", 3)
-        section_filter = strategy.get("section_filter")
+        # Step 5: Get retrieval strategy (dual-strategy merge from top-2 types)
+        primary_strategy = RETRIEVAL_STRATEGIES[query_type]
+        strategy_top_k = primary_strategy["top_k"]
+        rerank_top_n = primary_strategy["rerank_top_n"]
+        max_per_paper = primary_strategy.get("max_per_paper", 3)
+        section_filter = primary_strategy.get("section_filter")
+
+        # Merge chunk_types from top-2 strategies for broader search
+        if multi_class and multi_class.merged_chunk_types:
+            chunk_types = list(multi_class.merged_chunk_types)
+        else:
+            chunk_types = primary_strategy["chunk_types"]
+
+        # Merge parameters from secondary strategy
+        if multi_class and len(multi_class.query_types) >= 2:
+            secondary_strategy = RETRIEVAL_STRATEGIES.get(
+                multi_class.query_types[1][0], {}
+            )
+            strategy_top_k = max(strategy_top_k, secondary_strategy.get("top_k", 0))
+            rerank_top_n = max(rerank_top_n, secondary_strategy.get("rerank_top_n", 0))
+            # Merge section filters (union)
+            secondary_filter = secondary_strategy.get("section_filter")
+            if section_filter and secondary_filter:
+                section_filter = list(set(section_filter + secondary_filter))
+            elif secondary_filter:
+                section_filter = secondary_filter
 
         # User-specified top_k controls the FINAL output count (rerank_top_n), not retrieval
         # Retrieval should cast a wider net to ensure good reranking candidates
@@ -849,6 +869,101 @@ class QueryEngine:
             "error": warnings[0] if warnings else None
         })
 
+        # Step 10b: LLM retrieval quality evaluation + conditional re-retrieval
+        re_retrieval_triggered = False
+        re_retrieval_reason = None
+        re_search_terms: List[str] = []
+        max_score = 0.0
+
+        if reranked and not cache_hit:
+            scores = [d.get('rerank_score', 0) for d in reranked]
+            max_score = max(scores)
+
+            # Always evaluate retrieval quality with LLM
+            emit("quality_eval", {"status": "starting"})
+            eval_result = self._evaluate_retrieval_quality(query, reranked)
+            eval_confidence = eval_result["confidence"]
+            eval_missing = eval_result["missing"]
+            re_search_terms = eval_result["search_terms"]
+
+            if eval_confidence <= 3:
+                re_retrieval_triggered = True
+                re_retrieval_reason = "semantic_gaps" if eval_missing else "low_quality"
+                logger.info(f"Re-retrieval triggered: confidence={eval_confidence}/5, missing='{eval_missing}'")
+                emit("quality_eval", {
+                    "confidence": eval_confidence,
+                    "missing": eval_missing,
+                    "search_terms": re_search_terms,
+                })
+            else:
+                logger.info(f"Retrieval quality sufficient: confidence={eval_confidence}/5")
+                emit("quality_eval", {"confidence": eval_confidence})
+
+        if re_retrieval_triggered:
+            emit("re_retrieval", {"status": "starting", "reason": re_retrieval_reason,
+                                   "search_terms": re_search_terms})
+            try:
+                # Build targeted re-retrieval query using LLM-suggested search terms
+                if re_search_terms:
+                    broadened_query = f"{expanded_query} {' '.join(re_search_terms)}"
+                else:
+                    broadened_query = expanded_query
+
+                # Re-embed and re-search with broadened parameters
+                re_embedding = self.embedder.embed_query(broadened_query)
+                all_chunk_types = ["abstract", "section", "fine", "table", "caption"]
+                re_top_k = int(effective_top_k * 1.5)
+
+                if self.enable_hybrid_search and hasattr(self.store, 'hybrid_search'):
+                    re_results = self.store.hybrid_search(
+                        query=broadened_query,
+                        query_embedding=re_embedding,
+                        limit=re_top_k,
+                        chunk_types=all_chunk_types,
+                        section_names=None,  # Drop section filter
+                        paper_ids=paper_ids,
+                    )
+                else:
+                    re_results = self.store.search_by_strategy(
+                        query_embedding=re_embedding,
+                        chunk_types=all_chunk_types,
+                        top_k=re_top_k,
+                        section_filter=None,
+                        paper_ids=paper_ids,
+                    )
+
+                if re_results:
+                    re_rerank = self.reranker.rerank_with_metadata(
+                        query=query,
+                        documents=re_results,
+                        top_n=rerank_top_n,
+                        max_per_paper=max_per_paper,
+                    )
+                    re_scores = [d.get('rerank_score', 0) for d in re_rerank.documents]
+                    re_max = max(re_scores) if re_scores else 0
+
+                    if re_max > max_score:
+                        reranked = re_rerank.documents
+                        reranked_count = len(reranked)
+                        logger.info(f"Re-retrieval improved: {max_score:.3f} -> {re_max:.3f}")
+                        emit("re_retrieval", {"status": "completed", "improved": True,
+                                               "new_max_score": round(re_max, 3),
+                                               "search_terms": re_search_terms,
+                                               "reason": re_retrieval_reason})
+                    else:
+                        logger.info(f"Re-retrieval did not improve: {max_score:.3f} vs {re_max:.3f}")
+                        emit("re_retrieval", {"status": "completed", "improved": False})
+                else:
+                    emit("re_retrieval", {"status": "completed", "improved": False})
+
+            except Exception as e:
+                logger.warning(f"Re-retrieval failed: {e}, keeping original results")
+                emit("re_retrieval", {"success": False, "error": str(e)})
+        else:
+            if not reranked or cache_hit:
+                emit("quality_eval", {"skipped": True})
+            emit("re_retrieval", {"skipped": True})
+
         # Step 11: Expand fine chunks with parent context
         expanded_sources = self._expand_fine_chunks(reranked)
 
@@ -935,6 +1050,15 @@ class QueryEngine:
         logger.info(f"[QUERY_ENGINE] Returned answer length: {len(answer)} chars")
         logger.info(f"[QUERY_ENGINE] Returned answer MD5: {answer_hash}")
         logger.info(f"[QUERY_ENGINE] Returned answer preview: {answer[:200]}...")
+
+        # Strip hallucinated citations that reference non-existent sources
+        if expanded_sources and answer:
+            max_source = len(expanded_sources)
+            import re as _re
+            def _replace_invalid(m):
+                n = int(m.group(1))
+                return m.group(0) if 1 <= n <= max_source else ""
+            answer = _re.sub(r'\[Source\s+(\d+)\]', _replace_invalid, answer)
 
         emit("generation", {"status": "complete"})
         emit("answer_complete", {"answer": answer})
@@ -1183,6 +1307,89 @@ class QueryEngine:
         # Everything else: universal retrieval
         return QueryType.GENERAL
 
+    def _evaluate_retrieval_quality(
+        self,
+        query: str,
+        chunks: List[Dict[str, Any]],
+        max_chunks: int = 5,
+    ) -> Dict[str, Any]:
+        """Use LLM to evaluate whether retrieved chunks sufficiently answer the query.
+
+        Returns:
+            Dict with keys:
+                - confidence: int (1-5, where 5 = fully covered)
+                - missing: str (what information is missing, empty if confident)
+                - search_terms: List[str] (suggested terms for re-retrieval)
+        """
+        if not chunks:
+            return {"confidence": 1, "missing": "no results retrieved", "search_terms": []}
+
+        # Format top chunks for evaluation
+        chunk_summaries = []
+        for i, chunk in enumerate(chunks[:max_chunks]):
+            text = chunk.get('text', '')[:300]
+            chunk_type = chunk.get('chunk_type', 'unknown')
+            section = chunk.get('section_name', '')
+            chunk_summaries.append(f"[Chunk {i+1}] ({chunk_type}, {section})\n{text}")
+        chunks_text = "\n---\n".join(chunk_summaries)
+
+        prompt = f"""You are evaluating whether retrieved document chunks can answer a research query.
+
+Query: {query}
+
+Retrieved chunks:
+{chunks_text}
+
+Rate retrieval quality on a 1-5 scale:
+5 = Chunks fully cover the query, ready to generate a complete answer
+4 = Mostly covered, minor gaps that won't significantly affect answer quality
+3 = Partially covered, some important aspects are missing
+2 = Poorly covered, most of the needed information is missing
+1 = Not covered at all, chunks are irrelevant
+
+If quality is 3 or below, identify what's missing and suggest 2-3 specific search terms that would help find the missing information.
+
+Respond in this exact format:
+CONFIDENCE: <1-5>
+MISSING: <what's missing, or "none">
+SEARCH_TERMS: <comma-separated terms, or "none">"""
+
+        try:
+            response = self.anthropic.messages.create(
+                model=self.claude_model_fast,
+                max_tokens=200,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = response.content[0].text.strip()
+
+            confidence = 3
+            missing = ""
+            search_terms = []
+
+            for line in text.split('\n'):
+                line = line.strip()
+                if line.startswith("CONFIDENCE:"):
+                    try:
+                        confidence = int(line.split(":", 1)[1].strip())
+                        confidence = max(1, min(5, confidence))
+                    except ValueError:
+                        pass
+                elif line.startswith("MISSING:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val.lower() != "none":
+                        missing = val
+                elif line.startswith("SEARCH_TERMS:"):
+                    val = line.split(":", 1)[1].strip()
+                    if val.lower() != "none":
+                        search_terms = [t.strip() for t in val.split(",") if t.strip()]
+
+            return {"confidence": confidence, "missing": missing, "search_terms": search_terms}
+
+        except Exception as e:
+            logger.warning(f"Retrieval quality evaluation failed: {e}")
+            return {"confidence": 3, "missing": "", "search_terms": []}
+
     def _expand_fine_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Expand fine chunks by fetching their parent section for context.
 
@@ -1322,7 +1529,7 @@ class QueryEngine:
 Retrieved Sources from Uploaded Papers:
 {sources_text}
 
-IMPORTANT: You MUST cite these sources using [Source N] format in your response. Start by answering the question using these sources with proper citations."""
+IMPORTANT: You have exactly {len(sources)} sources above, numbered [Source 1] through [Source {len(sources)}]. Cite them using [Source N] format. Do NOT cite any source number higher than {len(sources)} — only cite sources that are provided above."""
             else:
                 current_message = f"""Question: {query}
 

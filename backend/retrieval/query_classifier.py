@@ -114,7 +114,7 @@ CLASSIFICATION_PROMPT = '''Classify this research question into exactly one cate
 Categories:
 - FACTUAL: Asking for specific facts, definitions, numeric values, or mechanisms. The answer is objective and verifiable. Examples: "What is the IC50?", "What mutations cause resistance?", "What is the molecular weight?"
 - FRAMING: Asking how to POSITION, JUSTIFY, or ARGUE for research significance in a publication context. Focus is on rhetorical strategy, not technical details. Examples: "How do I frame X as novel?", "How do I justify choosing method Y?", "How should I argue that X addresses an unmet need?"
-- METHODS: Asking about technical protocols, procedures, experimental parameters, or HOW something is DONE/SYNTHESIZED/MEASURED. Even if phrased as "how should I describe", if it asks about WHAT was done technically, it's METHODS. Examples: "What buffer was used?", "How are stapled peptides synthesized?", "How should I describe the SRS microscopy setup?"
+- METHODS: Asking about technical protocols, procedures, experimental parameters, or HOW something is DONE/SYNTHESIZED/MEASURED. Even if phrased as "how should I describe", if it asks about WHAT was done technically, it's METHODS. Examples: "What buffer was used?", "How is this compound synthesized?", "How should I describe the experimental setup?"
 - SUMMARY: Asking to summarize a paper or its findings. Examples: "Summarize this paper", "What are the key findings?"
 - COMPARATIVE: Asking to compare or contrast multiple things. Examples: "How does X compare to Y?", "What is the difference between X and Y?"
 - NOVELTY: Asking about what's NEW, what's been done BEFORE, what GAPS exist, or what claims are DEFENSIBLE. Assessing prior work to identify opportunities. Examples: "Has X been done before?", "What aspects are underexplored?", "Are there existing inhibitors for X?", "What is the strongest novelty claim?"
@@ -128,34 +128,34 @@ CRITICAL DISAMBIGUATION RULES:
 
 FEW-SHOT EXAMPLES:
 
-Query: "How should I describe the SRS microscopy setup and imaging parameters?"
+Query: "How should I describe the mass spectrometry parameters and detection settings?"
 → METHODS (asks about technical equipment/parameters, not rhetorical positioning)
 
-Query: "How are stapled peptides typically synthesized and characterized?"
-→ METHODS (asks about synthesis protocol)
+Query: "How are monoclonal antibodies typically produced and purified?"
+→ METHODS (asks about production protocol)
 
-Query: "How should I describe Affinity FPLC vs Ion-Exchange FPLC in a paper?"
+Query: "How should I describe gradient elution vs isocratic elution in a paper?"
 → METHODS (asks about technical procedures for chromatography)
 
-Query: "How do I frame Raman imaging as an enabling platform?"
+Query: "How do I frame this technique as a breakthrough for the field?"
 → FRAMING (asks about rhetorical positioning, no technical details)
 
-Query: "How do I justify that stapled peptides are better than small molecules?"
+Query: "How do I justify that this approach is superior to existing methods?"
 → FRAMING (asks for justification/argument strategy)
 
-Query: "Has SRS imaging been applied to biofilm penetration before?"
+Query: "Has this technique been applied to this specific problem before?"
 → NOVELTY (assessing prior work to identify gaps)
 
-Query: "Are there existing stapled peptide inhibitors targeting ERα mutants?"
+Query: "Are there existing inhibitors targeting this receptor?"
 → NOVELTY (assessing what exists to identify opportunities)
 
-Query: "What is the mechanism of action of LL-37?"
+Query: "What is the mechanism of action of this compound?"
 → FACTUAL (asking for specific mechanistic fact)
 
 Query: "What makes this approach distinct from previous work?"
 → NOVELTY (assessing differentiation from prior art)
 
-Query: "How does SRS compare to fluorescence microscopy?"
+Query: "How does method A compare to method B for this application?"
 → COMPARATIVE (neutral comparison of two techniques)
 
 Also identify:

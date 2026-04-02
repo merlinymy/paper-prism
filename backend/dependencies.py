@@ -98,6 +98,7 @@ class Dependencies:
                 client=self.qdrant_client,
                 bm25_vectorizer=self.bm25_vectorizer,
             )
+            self._store.ensure_collection()
             logger.info(f"Created QdrantStore for collection '{settings.qdrant_collection_name}'")
         return self._store
 
@@ -118,7 +119,6 @@ class Dependencies:
                 enable_expansion=settings.enable_query_expansion,
                 enable_caching=True,
                 enable_hyde=True,  # Hypothetical document embeddings
-                enable_query_rewriting=True,
                 enable_entity_extraction=True,
                 enable_citation_verification=True,  # Verify LLM citations
                 enable_conversation_memory=True,

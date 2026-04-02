@@ -728,6 +728,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let streamedWebSearchContent = '';
       let webSearchMessageId: string | null = null;
       const streamedCitations: CitationCheck[] = [];
+      let capturedSecondaryTypes: Array<{ type: string; confidence: number }> = [];
+      let capturedExpansionTerms: string[] = [];
+      let capturedReRetrievalTriggered = false;
 
       // Log query options being sent to API
       console.log('[Query] Submitting with options:', {
@@ -813,6 +816,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // Clear web search progress when web search completes
             if (stepName === 'web_search' && data?.status === 'complete') {
               dispatch({ type: 'SET_WEB_SEARCH_PROGRESS', payload: null });
+            }
+
+            // Capture pipeline metadata for final response
+            if (stepName === 'classification' && Array.isArray(data?.secondary_types)) {
+              capturedSecondaryTypes = data.secondary_types as Array<{ type: string; confidence: number }>;
+            }
+            if (stepName === 'expansion' && Array.isArray(data?.added_terms) && (data.added_terms as string[]).length > 0) {
+              capturedExpansionTerms = data.added_terms as string[];
+            }
+            if (stepName === 're_retrieval' && data?.status === 'starting') {
+              capturedReRetrievalTriggered = true;
             }
 
             // Mark this step as active and previous steps as completed
@@ -923,13 +937,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   timestamp: new Date(),
                   metadata: {
                     queryType: event.query_type as QueryType,
+                    secondaryTypes: capturedSecondaryTypes.length > 0 ? capturedSecondaryTypes : undefined,
                     expandedQuery: event.expanded_query,
+                    expansionTerms: capturedExpansionTerms.length > 0 ? capturedExpansionTerms : undefined,
                     sources: event.sources,
                     retrievalCount: event.retrieval_count,
                     rerankedCount: event.reranked_count,
                     latency,
                     warnings: event.warnings,
                     citationChecks: finalCitations,
+                    reRetrievalTriggered: capturedReRetrievalTriggered || undefined,
                   },
                 },
               },
