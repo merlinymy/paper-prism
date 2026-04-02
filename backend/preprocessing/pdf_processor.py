@@ -138,8 +138,7 @@ class MinerUExtractor:
     def _extract_with_mineru(self, pdf_path: Path) -> MinerUContent:
         """Extract using MinerU pipeline."""
         from mineru.cli.common import read_fn
-        from mineru.backend.pipeline.pipeline_analyze import doc_analyze
-        from mineru.backend.pipeline.model_json_to_middle_json import result_to_middle_json
+        from mineru.backend.pipeline.pipeline_analyze import doc_analyze_streaming
         from mineru.backend.pipeline.pipeline_middle_json_mkcontent import union_make
         from mineru.data.data_reader_writer import FileBasedDataWriter
         from mineru.utils.enum_class import MakeMode
@@ -152,24 +151,23 @@ class MinerUExtractor:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 image_writer = FileBasedDataWriter(tmp_dir)
 
-                # Run document analysis
-                infer_results, all_image_lists, all_pdf_docs, lang_list, ocr_enabled = doc_analyze(
+                # doc_analyze_streaming uses a callback to deliver results
+                doc_result = {}
+
+                def on_doc_ready(doc_index, model_list, middle_json, ocr_enable):
+                    doc_result['middle_json'] = middle_json
+
+                doc_analyze_streaming(
                     [pdf_bytes],
+                    [image_writer],
                     [self.lang],
+                    on_doc_ready,
                     parse_method="auto",
                     formula_enable=True,
                     table_enable=True
                 )
 
-                # Convert to intermediate format
-                middle_json = result_to_middle_json(
-                    infer_results[0],
-                    all_image_lists[0],
-                    all_pdf_docs[0],
-                    image_writer,
-                    self.lang,
-                    ocr_enabled[0]
-                )
+                middle_json = doc_result['middle_json']
 
                 pdf_info = middle_json.get("pdf_info", [])
 
@@ -196,7 +194,7 @@ class MinerUExtractor:
                 )
 
                 # Clean up references to help with resource cleanup
-                del infer_results, all_image_lists, all_pdf_docs, middle_json
+                del middle_json
                 gc.collect()
 
                 return result
