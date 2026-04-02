@@ -116,6 +116,7 @@ function PipelineProgress({ steps, webSearchProgress }: { steps: PipelineStepInf
                 )}
                 {Array.isArray(step.data.found) && step.data.found.length > 0 && `${step.data.found.length}`}
                 {Array.isArray(step.data.added_terms) && step.data.added_terms.length > 0 && `${step.data.added_terms.length} terms`}
+                {Array.isArray(step.data.sub_queries) && step.data.sub_queries.length > 0 && `${step.data.sub_queries.length} sub-queries`}
                 {typeof step.data.confidence === 'number' && step.name === 'quality_eval' && `${step.data.confidence}/5`}
                 {step.data.improved === true && 'improved'}
                 {step.data.improved === false && step.name === 're_retrieval' && 'no change'}

@@ -342,6 +342,7 @@ export type PipelineStepName =
   | 'entities'
   | 'classification'
   | 'expansion'
+  | 'decomposition'
   | 'hyde'
   | 'retrieval'
   | 'reranking'
@@ -380,6 +381,7 @@ export const PIPELINE_STEPS: Array<{ name: PipelineStepName; label: string; desc
   { name: 'entities', label: 'Entity Extraction', description: 'Identifying key terms' },
   { name: 'classification', label: 'Classification', description: 'Determining query type' },
   { name: 'expansion', label: 'Query Expansion', description: 'Adding synonyms' },
+  { name: 'decomposition', label: 'Decomposition', description: 'Splitting into sub-queries' },
   { name: 'hyde', label: 'HyDE Embedding', description: 'Generating hypothetical document' },
   { name: 'retrieval', label: 'Retrieval', description: 'Searching documents' },
   { name: 'reranking', label: 'Reranking', description: 'Ranking by relevance' },

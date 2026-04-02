@@ -766,7 +766,15 @@ class QueryEngine:
                 max_per_paper = max(max_per_paper, 8)
             logger.debug(f"Auto mode, paper filter active ({num_papers} papers): max_per_paper={max_per_paper}, rerank_top_n={rerank_top_n}")
 
-        # Step 6: Check cache for search results
+        # Step 6: Query decomposition (for complex multi-aspect queries)
+        sub_queries = self._decompose_query(rewritten_query)
+        if sub_queries:
+            logger.info(f"Query decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
+            emit("decomposition", {"sub_queries": sub_queries})
+        else:
+            emit("decomposition", {"skipped": True})
+
+        # Step 7: Check cache for search results
         results = None
         if self.cache:
             results = self.cache.get_search_results(
@@ -777,7 +785,7 @@ class QueryEngine:
                 logger.info("Cache hit for search results")
 
         if not results:
-            # Step 7: Embed query (with optional HyDE, respects override)
+            # Step 8: Embed query (with optional HyDE, respects override)
             emit("hyde", {"status": "starting"})
             timing_embedding_start = time.perf_counter()
             if use_hyde and self.hyde_embedder:
@@ -789,7 +797,6 @@ class QueryEngine:
                 emit("hyde", {"used": True})
             else:
                 emit("hyde", {"used": False, "skipped": True})
-                # Check embedding cache
                 if self.cache:
                     query_embedding = self.cache.get_embedding(expanded_query)
                     if query_embedding:
@@ -801,27 +808,59 @@ class QueryEngine:
                     query_embedding = self.embedder.embed_query(expanded_query)
             timing_embedding_ms = (time.perf_counter() - timing_embedding_start) * 1000
 
-            # Step 8: Search (hybrid or dense-only)
+            # Step 9: Search — decomposed (multi-query) or single-query
             timing_retrieval_start = time.perf_counter()
-            if self.enable_hybrid_search and hasattr(self.store, 'hybrid_search'):
-                # Hybrid search (dense + sparse)
-                results = self.store.hybrid_search(
-                    query=expanded_query,
-                    query_embedding=query_embedding,
-                    limit=effective_top_k,
-                    chunk_types=chunk_types,
-                    section_names=section_filter,
-                    paper_ids=paper_ids,
-                )
+
+            def _search_single(q_text: str, q_embedding):
+                """Run a single search query."""
+                if self.enable_hybrid_search and hasattr(self.store, 'hybrid_search'):
+                    return self.store.hybrid_search(
+                        query=q_text,
+                        query_embedding=q_embedding,
+                        limit=effective_top_k,
+                        chunk_types=chunk_types,
+                        section_names=section_filter,
+                        paper_ids=paper_ids,
+                    )
+                else:
+                    return self.store.search_by_strategy(
+                        query_embedding=q_embedding,
+                        chunk_types=chunk_types,
+                        top_k=effective_top_k,
+                        section_filter=section_filter,
+                        paper_ids=paper_ids,
+                    )
+
+            if sub_queries:
+                # Multi-query retrieval: search each sub-query + original, merge results
+                all_results = []
+                seen_chunk_ids = set()
+
+                # Search original expanded query first
+                main_results = _search_single(expanded_query, query_embedding)
+                for r in (main_results or []):
+                    cid = r.get('_chunk_id', id(r))
+                    if cid not in seen_chunk_ids:
+                        seen_chunk_ids.add(cid)
+                        all_results.append(r)
+
+                # Search each sub-query
+                for sq in sub_queries:
+                    sq_embedding = self.embedder.embed_query(sq)
+                    sq_results = _search_single(sq, sq_embedding)
+                    for r in (sq_results or []):
+                        cid = r.get('_chunk_id', id(r))
+                        if cid not in seen_chunk_ids:
+                            seen_chunk_ids.add(cid)
+                            r['_sub_query'] = sq  # Track provenance
+                            all_results.append(r)
+
+                results = all_results
+                logger.info(f"Decomposed retrieval: {len(results)} unique chunks from {1 + len(sub_queries)} queries")
             else:
-                # Dense-only search
-                results = self.store.search_by_strategy(
-                    query_embedding=query_embedding,
-                    chunk_types=chunk_types,
-                    top_k=effective_top_k,
-                    section_filter=section_filter,
-                    paper_ids=paper_ids,
-                )
+                # Single-query retrieval
+                results = _search_single(expanded_query, query_embedding)
+
             timing_retrieval_ms = (time.perf_counter() - timing_retrieval_start) * 1000
 
             # Cache search results
@@ -832,7 +871,8 @@ class QueryEngine:
 
         retrieval_count = len(results) if results else 0
         logger.info(f"Retrieved {retrieval_count} chunks")
-        emit("retrieval", {"count": retrieval_count, "cache_hit": cache_hit})
+        emit("retrieval", {"count": retrieval_count, "cache_hit": cache_hit,
+                           "decomposed": bool(sub_queries), "sub_queries": len(sub_queries) if sub_queries else 0})
 
         # Step 9: Boost results by entity overlap
         if self.entity_extractor and entities_extracted and results:
@@ -1306,6 +1346,50 @@ class QueryEngine:
 
         # Everything else: universal retrieval
         return QueryType.GENERAL
+
+    def _decompose_query(self, query: str) -> List[str]:
+        """Use LLM to decompose a complex query into independent sub-queries.
+
+        Only decomposes if the query has multiple distinct aspects that would
+        benefit from separate retrieval. Simple queries return empty list.
+
+        Returns:
+            List of sub-queries (empty if query doesn't need decomposition)
+        """
+        import json as _json
+
+        prompt = f"""Analyze this research query. If it asks about multiple distinct aspects that would benefit from separate searches, decompose it into 2-3 focused sub-queries. If it's already focused on one thing, return empty.
+
+Query: "{query}"
+
+Rules:
+- Only decompose if the query genuinely has multiple independent information needs
+- Each sub-query should be self-contained and searchable on its own
+- Do NOT decompose simple queries like "What is X?" or "How does X work?"
+- DO decompose comparisons ("How does X compare to Y?"), multi-part questions ("What are the methods and what were the results?"), and queries combining different aspects
+
+Return JSON only:
+{{"decompose": true/false, "sub_queries": ["sub-query 1", "sub-query 2"]}}"""
+
+        try:
+            response = self.anthropic.messages.create(
+                model=self.claude_model_fast,
+                max_tokens=200,
+                temperature=0,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            text = response.content[0].text.strip()
+            json_start = text.find('{')
+            json_end = text.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                data = _json.loads(text[json_start:json_end])
+                if data.get("decompose") and data.get("sub_queries"):
+                    sub_queries = [q.strip() for q in data["sub_queries"] if q.strip()]
+                    return sub_queries[:3]  # Max 3 sub-queries
+        except Exception as e:
+            logger.warning(f"Query decomposition failed: {e}")
+
+        return []
 
     def _evaluate_retrieval_quality(
         self,
