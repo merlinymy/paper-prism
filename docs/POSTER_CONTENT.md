@@ -209,9 +209,14 @@ Total latency: 5-12 seconds per query (fast path: ~6s, re-retrieval path: ~10s)
   Others: Single-pass retrieval with no quality check
   → LLM evaluates retrieval coverage, triggers targeted
     re-retrieval with specific search terms when gaps found
-    built for research questions
 
-✓ 13 pipeline stages
+✓ Cross-family evaluation benchmark
+  Others: Self-evaluate (same model judges its own output)
+  → 100-query suite with claim-level ground truth
+    Claude generates, GPT-5.4-mini evaluates
+    RAGAS-style metrics: faithfulness, recall, precision
+
+✓ 15-stage adaptive pipeline
   Others: Typically 3-6 stages
   → Each stage addresses a specific failure mode
     in simpler systems
@@ -267,78 +272,85 @@ A methods query searches SECTION + FINE (filtered to Methods/Experimental).
 │ Example Query               │ Detected     │ Chunks Searched    │ Top-k │ Max/Paper │
 │                             │ Type         │                    │       │           │
 ├─────────────────────────────┼──────────────┼────────────────────┼───────┼───────────┤
-│ "What is the IC50 of        │ FACTUAL      │ fine, table,       │  50   │     3     │
-│  compound X?"               │              │ caption            │       │           │
+│ "How many attention heads   │ FACTUAL      │ fine, table,       │  50   │     3     │
+│  does the Transformer use?" │              │ caption            │       │           │
 ├─────────────────────────────┼──────────────┼────────────────────┼───────┼───────────┤
-│ "How are stapled peptides   │ METHODS      │ section, fine      │  50   │     5     │
-│  synthesized?"              │              │ (Methods/Exp/Synth)│       │           │
+│ "How does BERT's masked     │ METHODS      │ section, fine      │  50   │     5     │
+│  LM pre-training work?"     │              │ (Methods/Exp)      │       │           │
 ├─────────────────────────────┼──────────────┼────────────────────┼───────┼───────────┤
 │ "Summarize this paper"      │ SUMMARY      │ abstract, section, │  20   │    10     │
 │                             │              │ full               │       │           │
 ├─────────────────────────────┼──────────────┼────────────────────┼───────┼───────────┤
-│ "How does SRS compare to    │ COMPARATIVE  │ abstract, section  │ 100   │     2     │
-│  fluorescence microscopy?"  │              │                    │       │           │
+│ "How does DPR compare to    │ COMPARATIVE  │ abstract, section  │ 100   │     2     │
+│  ColBERT for retrieval?"    │              │                    │       │           │
 ├─────────────────────────────┼──────────────┼────────────────────┼───────┼───────────┤
 │ "What are the limitations   │ LIMITATIONS  │ section, abstract  │  50   │     4     │
-│  of this approach?"         │              │ (Discussion/Concl) │       │           │
+│  of few-shot learning?"     │              │ (Discussion/Concl) │       │           │
 └─────────────────────────────┴──────────────┴────────────────────┴───────┴───────────┘
 ```
 
 **Caption**:
 ```
-The query classifier (Claude Sonnet 4.5) detects the question type.
-Each type triggers a different retrieval strategy — different chunk types,
-different result counts, different section filters, different diversity limits.
+Dual-strategy classification (top-2 types) determines retrieval.
+Each type triggers different chunk types, result counts, section
+filters, and diversity limits. Merged strategies cast a wider net.
 ```
 
 ---
 
-### SECTION 6: Benchmark — ARC vs. Direct Claude (Right Column, Top)
+### SECTION 6: Benchmark Results (Right Column, Top)
 
-**Header**: Benchmark: ARC vs. Asking Claude Directly
+**Header**: Evaluation Results
 
-**Subheader**: 15 queries • blind judge (randomized A/B, no system labels) • reference passages for fact-checking
+**Two subsections side by side:**
 
-**Bar chart** — side-by-side bars for ARC (blue) vs. Claude (gray) on three metrics:
+**LEFT: ARC vs. Direct Claude** (blind A/B comparison)
+
+**Subheader**: 15 queries • blind judge (randomized A/B) • reference passages for fact-checking
 
 ```
   Accuracy       ███████████████████████████████████████            3.7
-                 ██████████████████████████████                     3.0
+                 ██████████████████████████████                     3.3
 
   Completeness   ████████████████████████████████████████           4.0
                  █████████████████████████████████████              3.7
 
-  Grounding      ██████████████████████████████████████████         4.2
-                 ███████████████████                                1.9
+  Grounding      ██████████████████████████████████████             3.8
+                 █████████████████████████                          2.5
 
-                 ■ ARC (RAG pipeline)   ■ Direct Claude (no RAG)
-```
-
-**Big callout number** (make this visually prominent):
-```
-ARC won 13 of 15 queries.
+                 ■ PaperPrism (RAG)   ■ Direct Claude (no RAG)
 ```
 
-**Pull quote** (in italics, smaller text — a real judge explanation):
-```
-"Answer B provides highly grounded claims with specific
- citations to the reference passages, including verifiable
- details about rank values and parameter budgets."
- — Blind LLM judge on LoRA query (ARC was randomized to B)
-```
+**Big callout**: `PaperPrism won 11 of 15 queries.`
 
-**Methodology note** (small text):
+**RIGHT: RAGAS-Style Metrics** (cross-family evaluation)
+
+**Subheader**: 19 queries • GPT-5.4-mini judge (cross-family, not self-evaluation) • claim-level ground truth
+
 ```
-Blind evaluation: judge sees "Answer A" and "Answer B"
-with no system labels. A/B assignment randomized per query.
-Judge receives paper passages as ground truth for fact-checking.
+  Context Recall       ████████████████████████████████████████   100%
+  Completeness         ██████████████████████████████████████      85%
+  Claim Accuracy       █████████████████████████████████████       83%
+  Citation Accuracy    █████████████████████████████████████       83%
+  Faithfulness         ████████████████████████████████            71%
+  Refusal Accuracy     ███████████████████████████                 67%
 ```
 
 **Caption**:
 ```
-Grounding gap: 4.2 vs 1.9. ARC's answers are traceable
-to specific paper passages. Claude's are not — even when
-correct, they cannot be verified against sources.
+Left: Blind A/B comparison — ARC's grounded answers beat
+raw Claude, especially on evidence traceability (3.8 vs 2.5).
+Right: RAGAS-style metrics evaluated by GPT-5.4-mini
+(cross-family to avoid self-evaluation bias). 100% context
+recall means the retriever always finds the relevant paper.
+```
+
+**Methodology note** (small text):
+```
+A/B comparison: judge sees "Answer A" and "Answer B" with no
+system labels, randomized per query. RAGAS metrics: generation
+by Claude Sonnet, evaluation by OpenAI gpt-5.4-mini — different
+model families to eliminate self-evaluation bias.
 ```
 
 ---
@@ -357,12 +369,12 @@ correct, they cannot be verified against sources.
 │  OCR, tables │   │  1024-dim    │   │  Dense + BM25│
 └──────────────┘   └──────────────┘   └──────────────┘
 
-   Reranking         LLM Generation       Frontend
+   Reranking         LLM Generation       Evaluation
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│   Cohere     │   │  Claude 4.5  │   │    React     │
-│ rerank-v3.5  │──▶│ Opus (answer)│──▶│  TypeScript  │
-│ Cross-encoder│   │ Haiku (fast) │   │  Streaming   │
-└──────────────┘   │Sonnet (class)│   │     SSE      │
+│   Cohere     │   │  Claude 4.5  │   │   OpenAI     │
+│ rerank-v3.5  │──▶│ Opus (answer)│   │ gpt-5.4-mini │
+│ Cross-encoder│   │ Haiku (fast) │   │ Cross-family │
+└──────────────┘   │Sonnet (class)│   │  evaluation  │
                    └──────────────┘   └──────────────┘
 ```
 
