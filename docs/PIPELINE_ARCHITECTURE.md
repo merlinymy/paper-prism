@@ -21,17 +21,18 @@
    - 4.1 [Entity Extraction](#41-entity-extraction)
    - 4.2 [Query Classification (Dual-Strategy)](#42-query-classification-dual-strategy)
    - 4.3 [Query Expansion (LLM-Based)](#43-query-expansion-llm-based)
-   - 4.4 [Embedding (with optional HyDE)](#44-embedding-with-optional-hyde)
-   - 4.5 [Hybrid Retrieval (Dense + Sparse)](#45-hybrid-retrieval-dense--sparse)
-   - 4.6 [Entity Boosting](#46-entity-boosting)
-   - 4.7 [Reranking (Cohere)](#47-reranking-cohere)
-   - 4.8 [Retrieval Quality Evaluation](#48-retrieval-quality-evaluation)
-   - 4.9 [Conditional Re-Retrieval](#49-conditional-re-retrieval)
-   - 4.10 [Parent Chunk Expansion](#410-parent-chunk-expansion)
-   - 4.11 [Answer Generation (Claude)](#411-answer-generation-claude)
-   - 4.12 [Citation Verification](#412-citation-verification)
-   - 4.13 [Web Search (Optional)](#413-web-search-optional)
-   - 4.14 [Conversation Memory Update](#414-conversation-memory-update)
+   - 4.4 [Query Decomposition](#44-query-decomposition)
+   - 4.5 [Embedding (with optional HyDE)](#45-embedding-with-optional-hyde)
+   - 4.6 [Hybrid Retrieval (Dense + Sparse)](#46-hybrid-retrieval-dense--sparse)
+   - 4.7 [Entity Boosting](#47-entity-boosting)
+   - 4.8 [Reranking (Cohere)](#48-reranking-cohere)
+   - 4.9 [Retrieval Quality Evaluation](#49-retrieval-quality-evaluation)
+   - 4.10 [Conditional Re-Retrieval](#410-conditional-re-retrieval)
+   - 4.11 [Parent Chunk Expansion](#411-parent-chunk-expansion)
+   - 4.12 [Answer Generation (Claude)](#412-answer-generation-claude)
+   - 4.13 [Citation Verification](#413-citation-verification)
+   - 4.14 [Web Search (Optional)](#414-web-search-optional)
+   - 4.15 [Conversation Memory Update](#415-conversation-memory-update)
 5. [Data Model & Storage](#5-data-model--storage)
 6. [Caching Strategy](#6-caching-strategy)
 7. [API Layer & Streaming](#7-api-layer--streaming)
@@ -67,10 +68,13 @@ ARC is a Retrieval-Augmented Generation (RAG) system purpose-built for querying 
                      ┌──────────────────────────────────────────────┐
                      │               QUERY PIPELINE                  │
                      │                                              │
-   User Query ─────▶ │  Classify (top-2) ──▶ LLM Expand ──▶ Embed  │
+   User Query ─────▶ │  Classify (top-2) ──▶ LLM Expand             │
                      │     │                                        │
                      │     ▼                                        │
-                     │  Hybrid Search (merged chunk types)          │
+                     │  Decompose? ──▶ Embed ──▶ Search each       │
+                     │     │           (per sub-query if complex)   │
+                     │     ▼                                        │
+                     │  Merge + Dedup (merged chunk types)          │
                      │     │                                        │
                      │     ▼                                        │
                      │  Rerank (Cohere)                             │
@@ -482,7 +486,32 @@ Output: "CRISPR off-target effects (related terms: Cas9 specificity, guide RNA m
 
 **Cost**: ~200ms latency, one Haiku call per query. Negligible cost relative to the downstream Opus generation call.
 
-### 4.4 Embedding (with optional HyDE)
+### 4.4 Query Decomposition
+
+**File**: `retrieval/query_engine.py` — `_decompose_query()`
+
+Complex queries that ask about multiple distinct aspects are decomposed into 2-3 focused sub-queries, each searched independently.
+
+**Example**:
+```
+Input:  "How does BERT compare to GPT in pre-training approach and downstream performance?"
+Output: ["What are the differences between BERT and GPT pre-training approaches?",
+         "How do BERT and GPT compare in downstream task performance?"]
+```
+
+**How it works**: Haiku analyzes the query and returns a JSON response indicating whether decomposition is needed. Only triggers for genuinely multi-aspect queries — comparisons, conjunctions, cause-and-effect chains. Simple queries like "What is the IC50?" pass through unchanged.
+
+**Multi-query retrieval**: When decomposed, the system:
+1. Searches the original expanded query (primary results)
+2. Embeds and searches each sub-query independently
+3. Merges all results, deduplicating by chunk ID
+4. The merged set goes to reranking — the reranker sorts out relevance across all sub-query contributions
+
+**Why this matters**: A comparative query like "How does BERT compare to GPT?" might retrieve chunks heavily about one model but miss the other. By searching "BERT pre-training" and "GPT pre-training" separately, both sides of the comparison get adequate retrieval coverage.
+
+**Provenance tracking**: Each result from a sub-query is tagged with `_sub_query` for debugging which sub-query contributed which chunks.
+
+### 4.5 Embedding (with optional HyDE)
 
 **File**: `retrieval/hyde.py` — `HyDE` and `HyDEEmbedder` classes
 
@@ -519,7 +548,7 @@ Embedding input: "Query: What is the mechanism... \n\nRelevant excerpt: LL-37, a
 - FACTUAL → generates a technical paragraph with specific values
 - DISCUSSION → generates a Discussion section excerpt
 
-### 4.5 Hybrid Retrieval (Dense + Sparse)
+### 4.6 Hybrid Retrieval (Dense + Sparse)
 
 **File**: `retrieval/qdrant_store.py` — `QdrantStore.hybrid_search()`
 
@@ -564,7 +593,7 @@ section_filter=["methods", "experimental", "synthesis"]
 
 **Fallback**: If hybrid search fails (e.g., sparse vectors not yet indexed), the system automatically falls back to dense-only search.
 
-### 4.6 Entity Boosting
+### 4.7 Entity Boosting
 
 After retrieval, results are boosted based on entity overlap with the query:
 
@@ -578,7 +607,7 @@ for result in results:
 
 **Why a multiplicative boost, not a filter**: Filtering would exclude potentially relevant chunks that discuss the entity without mentioning it by name (e.g., a paragraph about "the peptide's activity" without naming LL-37). Boosting gently promotes entity-containing chunks without excluding others.
 
-### 4.7 Reranking (Cohere)
+### 4.8 Reranking (Cohere)
 
 **File**: `retrieval/reranker.py` — `CohereReranker` class
 
@@ -607,7 +636,7 @@ This architecture is standard in production search systems. The first stage uses
 - 2-3 papers → max_per_paper=15
 - 4+ papers → max_per_paper=8
 
-### 4.8 Retrieval Quality Evaluation
+### 4.9 Retrieval Quality Evaluation
 
 **File**: `retrieval/query_engine.py` — `_evaluate_retrieval_quality()`
 
@@ -628,7 +657,7 @@ If confidence ≤ 3, the evaluator also returns:
 
 **Cost**: One Haiku call per query (~200ms). Runs on every query — quality over speed.
 
-### 4.9 Conditional Re-Retrieval
+### 4.10 Conditional Re-Retrieval
 
 **File**: `retrieval/query_engine.py`
 
@@ -649,7 +678,7 @@ Quality Eval → confidence ≤ 3 → Re-Retrieval
 
 **Frontend**: The "Quality Check" and "Re-Retrieval" pipeline steps show in the UI. Quality Check displays the confidence score (e.g., "4/5"). Re-Retrieval shows "improved" or "skipped".
 
-### 4.10 Parent Chunk Expansion
+### 4.11 Parent Chunk Expansion
 
 **File**: `retrieval/query_engine.py` — `_expand_fine_chunks()`
 
@@ -659,7 +688,7 @@ When a fine chunk is retrieved, it may lack sufficient context. This step fetche
 
 **Why**: A fine chunk might say "The IC50 was 2.3 nM" without mentioning which compound or assay. The parent section chunk provides that context, enabling Claude to generate a properly contextualized answer.
 
-### 4.11 Answer Generation (Claude)
+### 4.12 Answer Generation (Claude)
 
 **File**: `retrieval/query_engine.py` — `_generate_answer()`
 
@@ -697,7 +726,7 @@ Text of the chunk...
 
 **Retry logic**: Rate limit errors (429) and server errors (5xx) trigger exponential backoff retry (up to 3 attempts, 1s → 2s → 4s delay).
 
-### 4.12 Citation Verification
+### 4.13 Citation Verification
 
 **File**: `retrieval/citation_verifier.py` — `CitationVerifier` class
 
@@ -718,13 +747,13 @@ After answer generation, the system verifies that each `[Source N]` citation act
 
 **Why verify citations**: LLMs hallucinate citations. Claude might attribute a claim to [Source 3] when the information actually comes from [Source 7] or from its own training data. Per-usage verification catches these misattributions at each point where a source is cited.
 
-### 4.13 Web Search (Optional)
+### 4.14 Web Search (Optional)
 
 When both `enable_web_search` and `enable_general_knowledge` are enabled, after the RAG answer is generated, a separate Claude call is made with web search tool access to fetch publicly available information.
 
 **Separation design**: Web search results are streamed as a distinct section after the RAG answer, clearly delineated. This prevents web results from contaminating the source-cited RAG answer.
 
-### 4.14 Conversation Memory Update
+### 4.15 Conversation Memory Update
 
 After answer generation:
 1. The user query is added to conversation history
@@ -869,8 +898,9 @@ The `/query/stream` endpoint emits Server-Sent Events with this sequence:
 event: entities         → {found: [...entities]}
 event: classification   → {type, confidence, reasoning, chunk_types, secondary_types}
 event: expansion        → {added_terms, expanded}
+event: decomposition    → {sub_queries: [...]} | {skipped: true}
 event: hyde             → {used: bool}
-event: retrieval        → {count, cache_hit}
+event: retrieval        → {count, cache_hit, decomposed, sub_queries}
 event: reranking        → {output_count, success}
 event: quality_eval     → {confidence: 1-5, missing?, search_terms?}
 event: re_retrieval     → {status, reason?, improved?, search_terms?} | {skipped: true}

@@ -126,41 +126,46 @@ This is the visual centerpiece. Make it take up most of the center column.
      Haiku generates domain-appropriate synonyms
      Added: "solid-phase synthesis", "Fmoc chemistry"
 
+  ⑤ Query Decomposition (conditional)
+     "Compare BERT and GPT pre-training and performance"
+     → ["BERT vs GPT pre-training?", "BERT vs GPT performance?"]
+
 ─── RETRIEVAL (green) ─────────────────────────────
 
-  ⑤ Embedding (+ optional HyDE)
+  ⑥ Embedding (+ optional HyDE)
      Generate hypothetical Methods excerpt, embed it
 
-  ⑥ Hybrid Search
+  ⑦ Hybrid Search (per sub-query if decomposed)
      Dense (Voyage AI) + Sparse (BM25) → RRF fusion
+     Merge + dedup results across sub-queries
 
-  ⑦ Entity Boosting
+  ⑧ Entity Boosting
      Upweight chunks containing query entities
 
-  ⑧ Reranking
+  ⑨ Reranking
      Cohere cross-encoder: 50 → 15 results
      Soft per-paper caps (high scores bypass limit)
 
-  ⑨ Quality Evaluation ← UNIQUE
+  ⑩ Quality Evaluation ← UNIQUE
      Haiku rates coverage 1-5, identifies gaps
 
-  ⑩ Conditional Re-Retrieval
+  ⑪ Conditional Re-Retrieval
      If gaps found → targeted search with
      LLM-suggested terms → re-rerank
 
-  ⑪ Parent Chunk Expansion
+  ⑫ Parent Chunk Expansion
      Fine chunks fetch parent section for context
 
 ─── GENERATION (orange) ───────────────────────────
 
-  ⑫ Answer Generation
+  ⑬ Answer Generation
      Claude Opus with query-type-specific prompt
 
-  ⑬ Citation Verification ← UNIQUE
+  ⑭ Citation Verification ← UNIQUE
      Per-usage: each citation checked independently
-     JSON response with claim + confidence + explanation
+     Clickable modal with claim + confidence + explanation
 
-  ⑭ Conversation Memory
+  ⑮ Conversation Memory
      Track context for follow-up questions
 ```
 
@@ -195,11 +200,15 @@ Total latency: 5-12 seconds per query (fast path: ~6s, re-retrieval path: ~10s)
   → Each usage of [Source N] is independently checked
     against the source text — clickable modal with details
 
+✓ Query decomposition for complex questions
+  Others: Single query, single search
+  → "Compare BERT and GPT" decomposes into sub-queries,
+    each searched independently, results merged + reranked
+
 ✓ Retrieval quality feedback loop
   Others: Single-pass retrieval with no quality check
   → LLM evaluates retrieval coverage, triggers targeted
     re-retrieval with specific search terms when gaps found
-    correction, and 16 query-type-specific prompts
     built for research questions
 
 ✓ 13 pipeline stages

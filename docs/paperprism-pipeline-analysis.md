@@ -191,7 +191,7 @@ The following recommendations from this analysis have been implemented:
 |---|---|---|
 | **Rec 1: Retrieval Evaluator** | **Implemented (enhanced)** | LLM quality evaluation (Haiku) runs after every reranking pass. Rates retrieval coverage 1-5, identifies missing information, provides targeted search terms. Goes beyond the original suggestion — uses LLM evaluation instead of score heuristics. |
 | **Rec 2: Multi-Strategy Hedging** | **Implemented** | `classify_multi()` returns top-2 types. Chunk types from both strategies are merged for search. Section filters are unioned. Max top-k uses the higher of both strategies. |
-| **Rec 3: Query Decomposition** | Not implemented | Decomposition logic exists in `query_rewriter.py` but sub-queries are not searched independently. |
+| **Rec 3: Query Decomposition** | **Implemented** | LLM-based decomposition (Haiku). Complex queries split into 2-3 sub-queries, each searched independently, results merged and deduplicated before reranking. |
 | **Rec 4: Contextual Re-Expansion** | **Implemented (via quality evaluator)** | When retrieval quality is poor, the LLM evaluator provides targeted search terms based on what's missing — a more intelligent form of pseudo-relevance feedback. |
 | **Rec 5: Relax Per-Paper Limits** | **Implemented** | Soft caps: chunks with rerank_score > 0.5 bypass the per-paper quota up to 2× the limit. |
 
