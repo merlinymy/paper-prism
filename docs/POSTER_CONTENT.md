@@ -304,7 +304,7 @@ filters, and diversity limits. Merged strategies cast a wider net.
 
 **Two subsections side by side:**
 
-**LEFT: ARC vs. Direct Claude** (blind A/B comparison)
+**LEFT: PaperPrism vs. Direct Claude** (blind A/B comparison)
 
 **Subheader**: 15 queries • blind judge (randomized A/B) • reference passages for fact-checking
 
@@ -323,34 +323,44 @@ filters, and diversity limits. Merged strategies cast a wider net.
 
 **Big callout**: `PaperPrism won 11 of 15 queries.`
 
-**RIGHT: RAGAS-Style Metrics** (cross-family evaluation)
+**RIGHT: RAGAS-Style Metrics** (100-query comprehensive benchmark)
 
-**Subheader**: 19 queries • GPT-5.4-mini judge (cross-family, not self-evaluation) • claim-level ground truth
+**Subheader**: 100 queries across 6 categories • GPT-5.4-mini judge (cross-family) • claim-level ground truth
 
 ```
-  Context Recall       ████████████████████████████████████████   100%
-  Completeness         ██████████████████████████████████████      85%
-  Claim Accuracy       █████████████████████████████████████       83%
-  Citation Accuracy    █████████████████████████████████████       83%
-  Faithfulness         ████████████████████████████████            71%
-  Refusal Accuracy     ███████████████████████████                 67%
+  Context Recall       ████████████████████████████████████████    89%
+  Claim Accuracy       ███████████████████████████████████████     87%
+  Citation Accuracy    ██████████████████████████████████          72%
+  Faithfulness         █████████████████████████████████           69%
+  Completeness         ████████████████████████████████            67%
+  Refusal Accuracy     █████████████████████████                   50%
+```
+
+**Breakdown by query type** (smaller table):
+```
+  Factual (30 queries)        97% claim accuracy, 97% completeness
+  Robustness (10 queries)    100% claim accuracy (typos, broken English)
+  Cross-paper (25 queries)    60% claim accuracy (multi-paper synthesis)
+  Adversarial (10 queries)    95% claim accuracy, 25% completeness
+  Refusal (10 queries)         5/10 correctly refused
 ```
 
 **Caption**:
 ```
-Left: Blind A/B comparison — ARC's grounded answers beat
-raw Claude, especially on evidence traceability (3.8 vs 2.5).
-Right: RAGAS-style metrics evaluated by GPT-5.4-mini
-(cross-family to avoid self-evaluation bias). 100% context
-recall means the retriever always finds the relevant paper.
+Left: Blind A/B — PaperPrism's grounded answers beat raw Claude,
+especially on evidence traceability (3.8 vs 2.5).
+Right: 100-query benchmark with claim-level ground truth.
+Factual queries are the strongest (97% accuracy). Cross-paper
+synthesis is the hardest open challenge (60%).
 ```
 
 **Methodology note** (small text):
 ```
-A/B comparison: judge sees "Answer A" and "Answer B" with no
-system labels, randomized per query. RAGAS metrics: generation
-by Claude Sonnet, evaluation by OpenAI gpt-5.4-mini — different
-model families to eliminate self-evaluation bias.
+A/B comparison: blind judge, randomized per query. Comprehensive
+benchmark: 100 queries (30 factual, 25 cross-paper, 15 exploratory,
+10 adversarial, 10 refusal, 10 robustness). Generation by Claude
+Sonnet, evaluation by OpenAI gpt-5.4-mini — cross-family to
+eliminate self-evaluation bias.
 ```
 
 ---
