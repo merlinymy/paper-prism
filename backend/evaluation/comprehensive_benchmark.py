@@ -515,7 +515,7 @@ For each claim, respond with a JSON array:
     try:
         response = openai_client.chat.completions.create(
             model=eval_model,
-            max_tokens=1000,
+            max_completion_tokens=1000,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -563,7 +563,7 @@ Return JSON:
     try:
         response = openai_client.chat.completions.create(
             model=eval_model,
-            max_tokens=800,
+            max_completion_tokens=800,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
