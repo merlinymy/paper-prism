@@ -1,14 +1,14 @@
-"""Benchmark suite for ARC RAG pipeline.
+"""Benchmark suite for Paper Prism RAG pipeline.
 
 Three benchmark types:
 1. Ablation Study — disable features one at a time, measure degradation
-2. ARC vs. Direct Claude — compare RAG answers to raw LLM answers
+2. Paper Prism vs. Direct Claude — compare RAG answers to raw LLM answers
 3. Classification Accuracy — does the classifier detect query types correctly
 
 Usage:
     python -m evaluation.benchmark                      # Run all benchmarks
     python -m evaluation.benchmark --type ablation      # Ablation only
-    python -m evaluation.benchmark --type comparison    # ARC vs Claude only
+    python -m evaluation.benchmark --type comparison    # Paper Prism vs Claude only
     python -m evaluation.benchmark --type classification # Classification only
     python -m evaluation.benchmark --limit 10           # Limit queries per benchmark
     python -m evaluation.benchmark --output results.json # Custom output path
@@ -60,7 +60,7 @@ class AblationResult:
 
 @dataclass
 class ComparisonResult:
-    """Result from ARC vs. Direct Claude comparison."""
+    """Result from Paper Prism vs. Direct Claude comparison."""
     query_id: str
     query: str
     query_type: str
@@ -434,7 +434,7 @@ def run_ablation_study(
 
 
 # ---------------------------------------------------------------------------
-# Benchmark 2: ARC vs. Direct Claude
+# Benchmark 2: Paper Prism vs. Direct Claude
 # ---------------------------------------------------------------------------
 
 def run_comparison(
@@ -442,7 +442,7 @@ def run_comparison(
     query_engine: QueryEngine,
     anthropic_client: Anthropic,
 ) -> List[ComparisonResult]:
-    """Compare ARC pipeline answers to direct Claude answers."""
+    """Compare Paper Prism pipeline answers to direct Claude answers."""
 
     results = []
 
@@ -453,7 +453,7 @@ def run_comparison(
         if i > 0:
             time.sleep(3)
 
-        # --- ARC answer ---
+        # --- Paper Prism answer ---
         try:
             start = time.time()
             arc_result = query_engine.query(tq.query, response_mode="concise")
@@ -462,7 +462,7 @@ def run_comparison(
             arc_sources = len(arc_result.sources)
             arc_has_citations = "[Source" in arc_answer
         except Exception as e:
-            logger.error(f"  ARC failed: {e}")
+            logger.error(f"  Paper Prism failed: {e}")
             arc_answer = f"[ERROR: {e}]"
             arc_latency = 0
             arc_sources = 0
@@ -485,7 +485,7 @@ def run_comparison(
             claude_answer = f"[ERROR: {e}]"
             claude_latency = 0
 
-        # --- Build reference passages from ARC's retrieved sources for fact-checking ---
+        # --- Build reference passages from Paper Prism's retrieved sources for fact-checking ---
         reference_passages = ""
         try:
             if arc_sources > 0:
@@ -524,7 +524,7 @@ def run_comparison(
             judge_explanation=judge_scores["explanation"],
         ))
 
-        logger.info(f"  ARC: acc={judge_scores['arc_accuracy']} comp={judge_scores['arc_completeness']} ground={judge_scores['arc_grounding']}")
+        logger.info(f"  Paper Prism: acc={judge_scores['arc_accuracy']} comp={judge_scores['arc_completeness']} ground={judge_scores['arc_grounding']}")
         logger.info(f"  Claude: acc={judge_scores['claude_accuracy']} comp={judge_scores['claude_completeness']} ground={judge_scores['claude_grounding']}")
 
     return results
@@ -644,9 +644,9 @@ def generate_report(
             print(f"    {ar.config_name:<25} topics: {topic_d:+.1%}  entities: {entity_d:+.1%}")
 
     if comparison_results:
-        print("\n--- ARC vs. DIRECT CLAUDE ---")
-        print(f"  ARC wins: {arc_wins}/{n}  |  Claude wins: {claude_wins}/{n}  |  Ties: {ties}/{n}")
-        print(f"  ARC    avg scores — Accuracy: {arc_acc:.1f}/5  Completeness: {arc_comp:.1f}/5  Grounding: {arc_ground:.1f}/5")
+        print("\n--- PAPER PRISM vs. DIRECT CLAUDE ---")
+        print(f"  Paper Prism wins: {arc_wins}/{n}  |  Claude wins: {claude_wins}/{n}  |  Ties: {ties}/{n}")
+        print(f"  Paper Prism avg scores — Accuracy: {arc_acc:.1f}/5  Completeness: {arc_comp:.1f}/5  Grounding: {arc_ground:.1f}/5")
         print(f"  Claude avg scores — Accuracy: {claude_acc:.1f}/5  Completeness: {claude_comp:.1f}/5  Grounding: {claude_ground:.1f}/5")
 
     print("\n" + "=" * 70)
@@ -657,7 +657,7 @@ def generate_report(
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Run ARC benchmarks")
+    parser = argparse.ArgumentParser(description="Run Paper Prism benchmarks")
     parser.add_argument("--type", choices=["ablation", "comparison", "classification", "all"],
                         default="all", help="Benchmark type to run")
     parser.add_argument("--limit", type=int, default=None,
@@ -703,7 +703,7 @@ def main():
 
     # --- Run comparison ---
     if args.type in ("comparison", "all"):
-        logger.info("\n\n========== ARC vs. DIRECT CLAUDE ==========")
+        logger.info("\n\n========== PAPER PRISM vs. DIRECT CLAUDE ==========")
         # Use a subset for comparison (it's expensive — 3 API calls per query)
         comparison_queries = queries[:min(len(queries), args.limit or 15)]
 

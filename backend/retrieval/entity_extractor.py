@@ -223,7 +223,7 @@ Return as JSON:
 
 Only include entities actually mentioned. Return empty lists for missing categories.'''
 
-    def __init__(self, anthropic_client, model: str = "claude-3-haiku-20240307"):
+    def __init__(self, anthropic_client, model: str = "claude-haiku-4-5-20251001"):
         """Initialize with Anthropic client."""
         self.anthropic = anthropic_client
         self.model = model

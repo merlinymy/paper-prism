@@ -127,9 +127,9 @@ export function Sidebar({ collapsed = false }: SidebarProps) {
       <div className="h-[52px] flex items-center justify-between px-3 shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xs">ARC</span>
+            <span className="text-white font-bold text-xs">PP</span>
           </div>
-          <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">ARC</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Paper Prism</span>
         </div>
         <button
           onClick={toggleSidebar}

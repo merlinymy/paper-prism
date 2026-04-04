@@ -61,7 +61,7 @@ class HyDE:
     def __init__(
         self,
         anthropic_client: Anthropic,
-        model: str = "claude-3-haiku-20240307",  # Use fast model for HyDE
+        model: str = "claude-haiku-4-5-20251001",  # Use fast model for HyDE
         enabled: bool = True,
     ):
         """Initialize HyDE.

@@ -31,10 +31,10 @@ class PaperChunker:
 
     def __init__(
         self,
-        abstract_max_tokens: int = 400,
-        section_max_tokens: int = 3000,  # Increased from 2000
+        abstract_max_tokens: int = 300,
+        section_max_tokens: int = 2000,
         fine_chunk_tokens: int = 500,
-        fine_chunk_overlap: int = 100,
+        fine_chunk_overlap: int = 128,
         min_chunk_tokens: int = 50,  # Minimum viable chunk size
     ):
         """Initialize chunker.

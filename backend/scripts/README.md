@@ -21,7 +21,7 @@ This directory contains utility scripts for batch operations and maintenance tas
 
 ```bash
 # Make sure you're in the backend virtual environment
-cd /Users/merlin/projects/ARC/backend
+cd /Users/merlin/Dev/paper-prism/backend
 source venv/bin/activate  # On macOS/Linux
 # or
 venv\Scripts\activate  # On Windows
@@ -35,7 +35,7 @@ venv\Scripts\activate  # On Windows
 
 ```bash
 # Start the backend server (in another terminal)
-cd /Users/merlin/projects/ARC/backend
+cd /Users/merlin/Dev/paper-prism/backend
 source venv/bin/activate
 python -m uvicorn api.main:app --reload
 ```

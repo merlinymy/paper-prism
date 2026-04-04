@@ -1,6 +1,6 @@
-# ARC: Research Paper RAG System — Full Pipeline Architecture
+# Paper Prism: Research Paper RAG System — Full Pipeline Architecture
 
-> A deep-dive technical document covering every stage of the ARC pipeline, the design rationale behind each decision, and how the components work together end-to-end.
+> A deep-dive technical document covering every stage of the Paper Prism pipeline, the design rationale behind each decision, and how the components work together end-to-end.
 
 ---
 
@@ -19,7 +19,7 @@
 4. [Query Pipeline: Question to Answer](#4-query-pipeline-question-to-answer)
    - 4.0 [Conversation Reference Resolution](#40-conversation-reference-resolution)
    - 4.1 [Entity Extraction](#41-entity-extraction)
-   - 4.2 [Query Classification (Dual-Strategy)](#42-query-classification-dual-strategy)
+   - 4.2 [Query Classification (Multi-Strategy)](#42-query-classification-dual-strategy)
    - 4.3 [Query Expansion (LLM-Based)](#43-query-expansion-llm-based)
    - 4.4 [Query Decomposition](#44-query-decomposition)
    - 4.5 [Embedding (with optional HyDE)](#45-embedding-with-optional-hyde)
@@ -44,7 +44,7 @@
 
 ## 1. System Overview
 
-ARC is a Retrieval-Augmented Generation (RAG) system purpose-built for querying scientific research papers. It is designed for a single researcher (or small team) who wants to have an intelligent conversation with their personal paper library — asking factual questions, comparing methods across papers, positioning novelty claims, and getting cited answers grounded in their actual uploaded literature.
+Paper Prism is a Retrieval-Augmented Generation (RAG) system purpose-built for querying scientific research papers. It is designed for a single researcher (or small team) who wants to have an intelligent conversation with their personal paper library — asking factual questions, comparing methods across papers, positioning novelty claims, and getting cited answers grounded in their actual uploaded literature.
 
 ### High-Level Data Flow
 
@@ -236,7 +236,7 @@ SECTION_PATTERNS = [
 
 **File**: `preprocessing/chunker.py` — `PaperChunker` class
 
-This is the core design innovation of the ingestion pipeline. Instead of creating one type of chunk (like most RAG systems), ARC creates **6 distinct chunk types**, each optimized for different retrieval needs.
+This is the core design innovation of the ingestion pipeline. Instead of creating one type of chunk (like most RAG systems), Paper Prism creates **6 distinct chunk types**, each optimized for different retrieval needs.
 
 #### The 6 Chunk Types
 
@@ -419,7 +419,7 @@ Extracts domain-specific entities from the query for later use in boosting and f
 
 **Why extract entities**: These are used in entity boosting (Step 4.6) to upweight search results that contain the same entities mentioned in the query. This is especially important for scientific queries where the exact entity name is the most critical retrieval signal.
 
-### 4.2 Query Classification (Dual-Strategy)
+### 4.2 Query Classification (Multi-Strategy)
 
 **File**: `retrieval/query_classifier.py` — `QueryClassifier` class
 
@@ -449,22 +449,22 @@ Each query type has a fundamentally different retrieval need:
 
 Without classification, every query uses the same retrieval strategy, which means either precision suffers (too much irrelevant context) or recall suffers (not enough diverse sources).
 
-#### Dual-Strategy Classification
+#### Multi-Strategy Classification (Top-3 Ranked, Top-2 Merged)
 
-Instead of betting everything on a single classification, the system uses **`classify_multi()`** to get the top-2 most relevant query types. This hedges against misclassification:
+Instead of betting everything on a single classification, the system uses **`classify_multi()`** to get the top-3 most relevant query types ranked by confidence. The top-2 types drive retrieval strategy merging:
 
 1. **Primary type** drives: section filter, per-paper limits, answer generation system prompt
-2. **Merged chunk types** from both top-2 types are used for search — casting a wider retrieval net
+2. **Merged chunk types** from the top-2 types are used for search — casting a wider retrieval net
 3. **Max top-k** from both strategies ensures enough candidates for reranking
 4. **Section filters** are unioned — if primary suggests "methods" and secondary suggests "discussion", both are searched
 
-**LLM classification** (Sonnet): A structured prompt asks Claude to return the top-3 types ranked by confidence. The prompt includes domain-neutral disambiguation rules and few-shot examples.
+**LLM classification** (Sonnet): A structured prompt asks Claude to return the top-3 types ranked by confidence. The top-2 are used for strategy merging; all 3 are displayed in the UI. The prompt includes domain-neutral disambiguation rules and few-shot examples.
 
 **Confidence threshold**: If primary type confidence < 0.6, the system falls back to GENERAL strategy.
 
 **Heuristic fallback**: If LLM classification fails or is disabled, a keyword-based heuristic classifier uses ~200 signal terms for zero-cost classification.
 
-**Why dual-strategy**: A query like "How were these compounds synthesized and what were the results?" is both METHODS and FACTUAL. Single classification forces a choice; dual-strategy searches both chunk type sets and lets the reranker sort out what's most relevant.
+**Why multi-strategy**: A query like "How were these compounds synthesized and what were the results?" is both METHODS and FACTUAL. Single classification forces a choice; multi-strategy searches both chunk type sets and lets the reranker sort out what's most relevant.
 
 ### 4.3 Query Expansion (LLM-Based)
 
